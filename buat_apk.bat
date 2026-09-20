@@ -3,6 +3,22 @@ echo ====================================================
 echo MEMBUAT FILE APK BENGKEL QU
 echo ====================================================
 echo.
+
+if not exist "debug.keystore" (
+    if exist "debug.keystore.base64" (
+        echo Menyiapkan sertifikat kunci (keystore)...
+        certutil -decode debug.keystore.base64 debug.keystore >nul 2>&1
+    )
+)
+
+if not exist ".env" (
+    if exist ".env.example" (
+        copy .env.example .env >nul 2>&1
+    ) else (
+        type nul > .env
+    )
+)
+
 echo Pastikan komputer Anda sudah terpasang Java (JDK 17).
 echo Sedang memproses pembuatan APK...
 echo.
