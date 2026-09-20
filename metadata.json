@@ -1,0 +1,6 @@
+{
+  "name": "Bengkel Qu",
+  "description": "Aplikasi manajemen operasional bengkel motor: antrian servis, kasir & cetak nota/WA, inventaris stok, absensi mekanik, laporan omset, dan pengaturan bengkel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
