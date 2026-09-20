@@ -74,14 +74,14 @@ abstract class BengkelDatabase : RoomDatabase() {
                     workshopName = "BENGKEL QU",
                     ownerName = "Hendri",
                     email = "bageurhendri@gmail.com",
-                    phone = "081234567890",
+                    phone = "085714216556",
                     address = "Jl. Otomotif No. 88, Bandung"
                 )
             )
 
             // Seed Staff
             val staff = listOf(
-                StaffMember(name = "Hendri", role = "ADMIN", phone = "081234567890"),
+                StaffMember(name = "Hendri", role = "ADMIN", phone = "085714216556"),
                 StaffMember(name = "Pray", role = "KASIR", phone = "081299887766"),
                 StaffMember(name = "Day", role = "MEKANIK", phone = "081277665544"),
                 StaffMember(name = "Bul", role = "MEKANIK", phone = "081255443322"),

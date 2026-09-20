@@ -21,6 +21,7 @@ import com.example.ui.BengkelViewModel
 import com.example.ui.screens.AbsenScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.MarketingScreen
 import com.example.ui.screens.OmsetScreen
 import com.example.ui.screens.PengaturanScreen
 import com.example.ui.screens.PengeluaranScreen
@@ -85,6 +86,7 @@ fun BengkelAppContent(
             BengkelScreen.ABSEN -> AbsenScreen(viewModel = viewModel)
             BengkelScreen.OMSET -> OmsetScreen(viewModel = viewModel)
             BengkelScreen.REPORT -> ReportScreen(viewModel = viewModel)
+            BengkelScreen.MARKETING -> MarketingScreen(viewModel = viewModel)
             BengkelScreen.PENGATURAN -> PengaturanScreen(viewModel = viewModel)
         }
     }

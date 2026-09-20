@@ -239,7 +239,7 @@ object BackupRestoreManager {
                 workshopName = profObj.optString("workshopName", "BENGKEL QU"),
                 ownerName = profObj.optString("ownerName", "Hendri"),
                 email = profObj.optString("email", "bageurhendri@gmail.com"),
-                phone = profObj.optString("phone", "081234567890"),
+                phone = profObj.optString("phone", "085714216556"),
                 address = profObj.optString("address", "Jl. Otomotif No. 88, Bandung"),
                 subscriptionTier = tier,
                 licenseKey = profObj.optString("licenseKey", ""),

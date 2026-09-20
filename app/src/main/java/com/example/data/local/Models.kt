@@ -191,7 +191,7 @@ data class WorkshopProfile(
     val workshopName: String = "BENGKEL QU",
     val ownerName: String = "Hendri",
     val email: String = "bageurhendri@gmail.com",
-    val phone: String = "081234567890",
+    val phone: String = "085714216556",
     val address: String = "Jl. Otomotif No. 88, Bandung",
     val subscriptionTier: SubscriptionTier = SubscriptionTier.REGULAR,
     val licenseKey: String = "",

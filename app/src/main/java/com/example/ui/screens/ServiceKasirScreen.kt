@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,15 +22,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -66,6 +71,40 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
     var showNewCustomerDialog by remember { mutableStateOf(false) }
 
+    var customerDateFilter by remember { mutableStateOf("Semua Data") }
+    val customerFilterOptions = listOf("Hari Ini", "7 Hari Terakhir", "Bulan Ini", "Semua Data")
+
+    val allServices = remember(activeServices, completedServices) {
+        activeServices + completedServices
+    }
+
+    val filteredCustomerServices = remember(allServices, customerDateFilter) {
+        val now = System.currentTimeMillis()
+        val cal = java.util.Calendar.getInstance()
+        when (customerDateFilter) {
+            "Hari Ini" -> {
+                cal.timeInMillis = now
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                cal.set(java.util.Calendar.MINUTE, 0)
+                cal.set(java.util.Calendar.SECOND, 0)
+                allServices.filter { it.dateEpoch >= cal.timeInMillis }
+            }
+            "7 Hari Terakhir" -> {
+                val sevenDaysAgo = now - (7L * 24 * 60 * 60 * 1000)
+                allServices.filter { it.dateEpoch >= sevenDaysAgo }
+            }
+            "Bulan Ini" -> {
+                cal.timeInMillis = now
+                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                cal.set(java.util.Calendar.MINUTE, 0)
+                cal.set(java.util.Calendar.SECOND, 0)
+                allServices.filter { it.dateEpoch >= cal.timeInMillis }
+            }
+            else -> allServices
+        }
+    }
+
     // Pro Dialog States
     var showProUpgradeDialog by remember { mutableStateOf(false) }
     var proGateTitle by remember { mutableStateOf("") }
@@ -91,14 +130,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
             Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp)) {
                 Button(
                     onClick = {
-                        val gate = FeatureGate.canAddServiceQueue(totalTodayServices, isPro)
-                        if (gate is FeatureGate.GateResult.Denied) {
-                            proGateTitle = gate.featureName
-                            proGateReason = gate.reason
-                            showProUpgradeDialog = true
-                        } else {
-                            showNewCustomerDialog = true
-                        }
+                        showNewCustomerDialog = true
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -119,40 +151,6 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     )
                 }
             }
-
-            // Quota indicator row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Antrian Hari Ini: ",
-                        fontSize = 11.sp,
-                        color = Color.Gray
-                    )
-                    Text(
-                        text = if (isPro) "$totalTodayServices (Unlimited PRO)" else "$totalTodayServices / 15 (Reguler)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (totalTodayServices >= 15 && !isPro) Color.Red else MaterialTheme.colorScheme.primary
-                    )
-                }
-                ProFeatureBadge(
-                    isPro = isPro,
-                    onClick = {
-                        if (!isPro) {
-                            proGateTitle = "Batas Antrian Harian Reguler"
-                            proGateReason = "Tingkatkan ke PRO untuk melayani antrian pelanggan harian tanpa batasan 15 motor per hari."
-                            showProUpgradeDialog = true
-                        }
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
 
             // Sub-modules shortcut row (Setoran & Pengeluaran as in diagram)
             Row(
@@ -187,6 +185,100 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("PENGELUARAN", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // EKSPOR DETAIL CUSTOMER (EXCEL & WA FORMAT) DENGAN FILTER TANGGAL
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "DETAIL CUSTOMER ($customerDateFilter)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "${filteredCustomerServices.size} Pelanggan",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.DarkGray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(customerFilterOptions) { opt ->
+                            FilterChip(
+                                selected = customerDateFilter == opt,
+                                onClick = { customerDateFilter = opt },
+                                label = { Text(opt, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.exportCustomerDetailExcel(
+                                    context = context,
+                                    filterLabel = customerDateFilter,
+                                    list = filteredCustomerServices,
+                                    sendViaWhatsApp = false
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("SIMPAN EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.exportCustomerDetailExcel(
+                                    context = context,
+                                    filterLabel = customerDateFilter,
+                                    list = filteredCustomerServices,
+                                    sendViaWhatsApp = true
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("SEND WA EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
 

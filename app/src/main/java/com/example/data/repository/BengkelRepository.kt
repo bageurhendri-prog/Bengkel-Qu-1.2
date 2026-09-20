@@ -4,6 +4,7 @@ import com.example.data.local.ApprovalStatus
 import com.example.data.local.AttendanceRecord
 import com.example.data.local.AttendanceStatus
 import com.example.data.local.BengkelDao
+import com.example.data.local.BengkelDatabase
 import com.example.data.local.CashDeposit
 import com.example.data.local.CustomerService
 import com.example.data.local.ExpenseItem
@@ -54,8 +55,10 @@ class BengkelRepository(private val dao: BengkelDao) {
 
     // Attendance
     fun getAttendanceByDate(dateStr: String): Flow<List<AttendanceRecord>> = dao.getAttendanceByDate(dateStr)
+    val allAttendanceRecords: Flow<List<AttendanceRecord>> = dao.getAllAttendanceRecords()
     suspend fun insertOrUpdateAttendance(record: AttendanceRecord) = dao.insertOrUpdateAttendance(record)
     suspend fun updateAttendanceStatus(id: Long, status: AttendanceStatus) = dao.updateAttendanceStatus(id, status)
+    suspend fun deleteAttendanceByStaffName(staffName: String) = dao.deleteAttendanceByStaffName(staffName)
 
     // Cash Deposit
     val cashDeposits: Flow<List<CashDeposit>> = dao.getAllCashDeposits()
@@ -88,5 +91,19 @@ class BengkelRepository(private val dao: BengkelDao) {
 
     suspend fun resetToFactoryDefaults() {
         com.example.data.local.BackupRestoreManager.resetToFactoryDefaults(dao)
+    }
+
+    suspend fun resetAllToZero() {
+        dao.clearCustomerServices()
+        dao.clearStockItems()
+        dao.clearIncomingStocks()
+        dao.clearRejectItems()
+        dao.clearExpenseItems()
+        dao.clearAttendanceRecords()
+        dao.clearCashDeposits()
+    }
+
+    suspend fun syncMasterData() {
+        BengkelDatabase.populateInitialData(dao)
     }
 }

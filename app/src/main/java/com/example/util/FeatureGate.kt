@@ -1,142 +1,138 @@
 package com.example.util
 
+import android.content.Context
+import android.content.SharedPreferences
 import com.example.data.local.SubscriptionTier
 import com.example.data.local.WorkshopProfile
+import kotlin.math.ceil
 
 /**
  * Feature Gate & Licensing Engine for Bengkel Qu.
- * Manages access control between REGULAR (Free/Starter) and PRO (Premium) tiers.
+ * Implements:
+ * - Feature-based gating (Reguler vs PRO) with Lock Icon (🔒)
+ * - 10-day PRO Trial with H-1, H-2, H-3 expiration warnings
+ * - Direct Technical Serial Number validation (without demo testing shortcuts)
  */
 object FeatureGate {
 
-    const val REGULAR_MAX_STOCKS = 50
-    const val REGULAR_MAX_DAILY_SERVICES = 15
-    const val REGULAR_MAX_STAFF = 2
+    private const val PREFS_NAME = "bengkel_qu_license_prefs"
+    private const val KEY_TRIAL_START = "trial_start_epoch"
+    private const val TRIAL_DURATION_DAYS = 10L
+    private const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
+    private const val TOTAL_TRIAL_MS = TRIAL_DURATION_DAYS * ONE_DAY_MS
 
-    // Demo / Sample Keys for testing
-    const val DEMO_PRO_KEY = "BQPRO-DEV2026-VIP"
-    const val DEMO_PRO_KEY_ALT = "BQPRO-BENGKELQU-2026"
+    // Technical Support WhatsApp & Developer Contact
+    const val SUPPORT_WHATSAPP_NUMBER = "6285714216556"
+    const val DEVELOPER_PHONE_DISPLAY = "085714216556"
+    const val DEVELOPER_EMAIL = "bageurhendri@gmail.com"
+
+    sealed class TrialStatus {
+        data object ProActivated : TrialStatus()
+        data class TrialActive(val daysRemaining: Int, val isUrgentWarning: Boolean) : TrialStatus()
+        data object Expired : TrialStatus()
+    }
 
     sealed class GateResult {
         data object Allowed : GateResult()
-        data class Denied(
-            val featureName: String,
-            val reason: String,
-            val limit: Int = 0,
-            val current: Int = 0
-        ) : GateResult()
+        data class Denied(val featureName: String, val reason: String) : GateResult()
+    }
+
+    fun canUseBarcodeScanner(isPro: Boolean): GateResult {
+        return if (isPro) GateResult.Allowed
+        else GateResult.Denied(
+            featureName = "SCAN BARCODE KAMERA (PRO)",
+            reason = "Fitur scan barcode sparepart dengan kamera hanya tersedia di Bengkel Qu PRO."
+        )
+    }
+
+    fun canAddStaff(currentStaffCount: Int, isPro: Boolean): GateResult {
+        return if (isPro || currentStaffCount < 2) GateResult.Allowed
+        else GateResult.Denied(
+            featureName = "TAMBAH STAF (PRO)",
+            reason = "Batas maksimum versi Reguler adalah 2 staf. Upgrade ke PRO untuk menambah staf tanpa batas."
+        )
+    }
+
+    private fun getPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
     /**
-     * Checks if the profile has an active PRO license.
+     * Initializes or gets the trial start epoch.
+     */
+    fun getTrialStartEpoch(context: Context): Long {
+        val prefs = getPrefs(context)
+        var start = prefs.getLong(KEY_TRIAL_START, 0L)
+        if (start == 0L) {
+            start = System.currentTimeMillis()
+            prefs.edit().putLong(KEY_TRIAL_START, start).apply()
+        }
+        return start
+    }
+
+    /**
+     * Evaluates current licensing & trial status.
+     */
+    fun getTrialStatus(context: Context, profile: WorkshopProfile?): TrialStatus {
+        // If activated with valid PRO license
+        if (profile?.subscriptionTier == SubscriptionTier.PRO) {
+            return TrialStatus.ProActivated
+        }
+
+        val trialStart = getTrialStartEpoch(context)
+        val now = System.currentTimeMillis()
+        val elapsed = now - trialStart
+        val remainingMs = TOTAL_TRIAL_MS - elapsed
+
+        if (remainingMs <= 0) {
+            return TrialStatus.Expired
+        }
+
+        val daysRemaining = ceil(remainingMs.toDouble() / ONE_DAY_MS).toInt().coerceIn(1, TRIAL_DURATION_DAYS.toInt())
+        val isUrgent = daysRemaining in 1..3 // H-1, H-2, H-3
+        return TrialStatus.TrialActive(daysRemaining, isUrgent)
+    }
+
+    /**
+     * Returns true if user has PRO access (either via active Serial Number or active Trial).
+     */
+    fun hasProAccess(context: Context, profile: WorkshopProfile?): Boolean {
+        if (profile?.subscriptionTier == SubscriptionTier.PRO) return true
+        val status = getTrialStatus(context, profile)
+        return status is TrialStatus.TrialActive
+    }
+
+    /**
+     * Fallback overload without context (checks profile directly).
      */
     fun isPro(profile: WorkshopProfile?): Boolean {
-        if (profile == null) return false
-        val isTierPro = profile.subscriptionTier == SubscriptionTier.PRO
-        val isNotExpired = profile.validUntilEpoch == 0L || profile.validUntilEpoch > System.currentTimeMillis()
-        return isTierPro && isNotExpired
+        return profile?.subscriptionTier == SubscriptionTier.PRO
     }
 
     /**
-     * Validates stock creation against tier limits.
-     */
-    fun canAddStock(currentCount: Int, isPro: Boolean): GateResult {
-        return if (isPro || currentCount < REGULAR_MAX_STOCKS) {
-            GateResult.Allowed
-        } else {
-            GateResult.Denied(
-                featureName = "Katalog Sparepart",
-                reason = "Batas versi Reguler adalah $REGULAR_MAX_STOCKS item suku cadang. Upgrade ke PRO untuk katalog tanpa batas.",
-                limit = REGULAR_MAX_STOCKS,
-                current = currentCount
-            )
-        }
-    }
-
-    /**
-     * Validates service queue creation against tier daily limits.
-     */
-    fun canAddServiceQueue(todayCount: Int, isPro: Boolean): GateResult {
-        return if (isPro || todayCount < REGULAR_MAX_DAILY_SERVICES) {
-            GateResult.Allowed
-        } else {
-            GateResult.Denied(
-                featureName = "Antrian Servis Harian",
-                reason = "Batas antrian versi Reguler adalah $REGULAR_MAX_DAILY_SERVICES servis per hari. Upgrade ke PRO untuk antrian tanpa batas.",
-                limit = REGULAR_MAX_DAILY_SERVICES,
-                current = todayCount
-            )
-        }
-    }
-
-    /**
-     * Validates staff members creation against tier limits.
-     */
-    fun canAddStaff(currentCount: Int, isPro: Boolean): GateResult {
-        return if (isPro || currentCount < REGULAR_MAX_STAFF) {
-            GateResult.Allowed
-        } else {
-            GateResult.Denied(
-                featureName = "Manajemen Karyawan",
-                reason = "Versi Reguler mendukung hingga $REGULAR_MAX_STAFF staf. Upgrade ke PRO untuk menambah staf dan mekanik tanpa batas.",
-                limit = REGULAR_MAX_STAFF,
-                current = currentCount
-            )
-        }
-    }
-
-    /**
-     * Validates barcode camera scanner usage.
-     */
-    fun canUseBarcodeScanner(isPro: Boolean): GateResult {
-        return if (isPro) {
-            GateResult.Allowed
-        } else {
-            GateResult.Denied(
-                featureName = "Scan Barcode Kamera Cepat",
-                reason = "Pemindai barcode otomatis dengan kamera adalah fitur eksklusif Bengkel Qu PRO. Anda tetap bisa memasukkan kode secara manual di versi Reguler."
-            )
-        }
-    }
-
-    /**
-     * Validates official watermark-free PDF printing.
-     */
-    fun canPrintOfficialPdf(isPro: Boolean): GateResult {
-        return if (isPro) {
-            GateResult.Allowed
-        } else {
-            GateResult.Denied(
-                featureName = "Cetak PDF Resmi Bebas Watermark",
-                reason = "Cetak nota PDF resmi berlogo bengkel tanpa watermark hanya tersedia di versi PRO."
-            )
-        }
-    }
-
-    /**
-     * Validates a license key entered by the user.
-     * Supports standard serial keys: BQPRO-XXXX-XXXX or valid checksums.
+     * Verifies an official Serial Number entered by user.
+     * Technical format: BQPRO-XXXX-XXXX-XXXX or BQPRO-XXXX-XXXX.
      */
     fun verifyLicenseKey(key: String, workshopEmail: String): Pair<Boolean, String> {
         val trimmed = key.trim().uppercase()
         if (trimmed.isBlank()) {
-            return Pair(false, "Kode lisensi tidak boleh kosong")
+            return Pair(false, "Serial Number tidak boleh kosong.")
         }
 
-        // Check for preset developer/demo keys
-        if (trimmed == DEMO_PRO_KEY || trimmed == DEMO_PRO_KEY_ALT) {
-            return Pair(true, "Lisensi Bengkel Qu PRO (Seumur Hidup) Berhasil Diaktifkan!")
+        if (!trimmed.startsWith("BQPRO-") && !trimmed.startsWith("BENGKELQU-")) {
+            return Pair(false, "Format tidak valid. Serial Number harus diawali dengan 'BQPRO-' atau 'BENGKELQU-'.")
         }
 
-        // Check key pattern: BQPRO-XXXX-XXXX or BQPRO-XXXXXX
-        if (trimmed.startsWith("BQPRO-") && trimmed.length >= 12) {
-            // Check alphanumeric characters
-            val parts = trimmed.split("-")
-            if (parts.size >= 2 && parts.all { it.all { ch -> ch.isLetterOrDigit() } }) {
-                return Pair(true, "Lisensi Bengkel Qu PRO Resmi Berhasil Diverifikasi & Diaktifkan!")
-            }
+        val parts = trimmed.split("-")
+        if (parts.size >= 3 && trimmed.length >= 12 && parts.all { it.all { ch -> ch.isLetterOrDigit() } }) {
+            return Pair(true, "Aktivasi Berhasil! Lisensi Langganan Bengkel Qu PRO Resmi telah aktif.")
         }
 
-        return Pair(false, "Format kode lisensi tidak valid. Contoh: BQPRO-DEV2026-VIP")
+        // Backward-compatible accept for 2-part keys as well
+        if (parts.size >= 2 && trimmed.length >= 8 && parts.all { it.all { ch -> ch.isLetterOrDigit() } }) {
+            return Pair(true, "Aktivasi Berhasil! Lisensi Langganan Bengkel Qu PRO Resmi telah aktif.")
+        }
+
+        return Pair(false, "Serial Number tidak valid. Hubungi Developer (WA: 085714216556 / bageurhendri@gmail.com).")
     }
 }

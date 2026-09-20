@@ -4,10 +4,20 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
+import androidx.camera.core.CameraControl
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -53,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,13 +79,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.local.StockItem
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import java.text.NumberFormat
 import java.util.Locale
+import java.util.concurrent.Executors
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun BarcodeScannerDialog(
     title: String = "SCAN BARCODE SPAREPART",
@@ -83,6 +100,8 @@ fun BarcodeScannerDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -109,6 +128,15 @@ fun BarcodeScannerDialog(
     var showManualInput by remember { mutableStateOf(false) }
     var scannedResult by remember { mutableStateOf<Pair<String, StockItem?>?>(null) }
     var isFlashOn by remember { mutableStateOf(false) }
+    var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
+
+    LaunchedEffect(isFlashOn) {
+        try {
+            cameraControl?.enableTorch(isFlashOn)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     fun triggerVibration() {
         try {
@@ -127,13 +155,17 @@ fun BarcodeScannerDialog(
     }
 
     fun handleCodeFound(code: String) {
+        if (scannedResult != null) return // Already processed current scan
+        val trimmed = code.trim()
+        if (trimmed.isBlank()) return
+
         val matchedStock = registeredStocks.firstOrNull {
-            it.barcode.equals(code, ignoreCase = true) ||
-                    it.name.contains(code, ignoreCase = true) ||
-                    (code.length >= 4 && it.barcode.contains(code))
+            it.barcode.equals(trimmed, ignoreCase = true) ||
+                    it.name.contains(trimmed, ignoreCase = true) ||
+                    (trimmed.length >= 4 && it.barcode.contains(trimmed))
         }
         triggerVibration()
-        scannedResult = Pair(code, matchedStock)
+        scannedResult = Pair(trimmed, matchedStock)
     }
 
     // Laser Animation for scanner
@@ -155,7 +187,7 @@ fun BarcodeScannerDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.92f))
+                .background(Color.Black.copy(alpha = 0.95f))
                 .padding(16.dp)
         ) {
             Column(
@@ -210,7 +242,7 @@ fun BarcodeScannerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Viewfinder / Camera Frame
                 Box(
@@ -218,34 +250,107 @@ fun BarcodeScannerDialog(
                         .fillMaxWidth()
                         .height(280.dp)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF1E1E1E))
+                        .background(Color.Black)
                         .border(2.dp, Color(0xFF4CAF50), RoundedCornerShape(20.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Camera Placeholder / Guidance Graphic
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.QrCodeScanner,
-                            contentDescription = null,
-                            tint = Color(0xFF81C784).copy(alpha = 0.6f),
-                            modifier = Modifier.size(64.dp)
+                    if (hasCameraPermission) {
+                        // Live CameraX Preview & ML Kit Analyzer
+                        AndroidView(
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx).apply {
+                                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                                }
+                                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                                cameraProviderFuture.addListener({
+                                    try {
+                                        val cameraProvider = cameraProviderFuture.get()
+                                        val preview = Preview.Builder().build().also {
+                                            it.setSurfaceProvider(previewView.surfaceProvider)
+                                        }
+
+                                        val barcodeScanner = BarcodeScanning.getClient()
+                                        val cameraExecutor = Executors.newSingleThreadExecutor()
+
+                                        val imageAnalysis = ImageAnalysis.Builder()
+                                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                            .build()
+
+                                        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                            val mediaImage = imageProxy.image
+                                            if (mediaImage != null) {
+                                                val image = InputImage.fromMediaImage(
+                                                    mediaImage,
+                                                    imageProxy.imageInfo.rotationDegrees
+                                                )
+                                                barcodeScanner.process(image)
+                                                    .addOnSuccessListener { barcodes ->
+                                                        for (barcode in barcodes) {
+                                                            barcode.rawValue?.let { code ->
+                                                                if (code.isNotBlank()) {
+                                                                    mainHandler.post {
+                                                                        handleCodeFound(code)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    .addOnCompleteListener {
+                                                        imageProxy.close()
+                                                    }
+                                            } else {
+                                                imageProxy.close()
+                                            }
+                                        }
+
+                                        cameraProvider.unbindAll()
+                                        val camera = cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            preview,
+                                            imageAnalysis
+                                        )
+                                        cameraControl = camera.cameraControl
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }, ContextCompat.getMainExecutor(ctx))
+                                previewView
+                            },
+                            modifier = Modifier.fillMaxSize()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = if (hasCameraPermission) "Posisikan Barcode di Tengah Kotak" else "Izin Kamera Dibutuhkan",
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        )
-                        if (!hasCameraPermission) {
-                            Spacer(modifier = Modifier.height(8.dp))
+                    } else {
+                        // Request Permission Placeholder
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(20.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Izin Kamera Dibutuhkan",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Aktifkan kamera untuk memindai barcode sparepart",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
                             Button(
                                 onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text("Berikan Izin Kamera", fontSize = 12.sp)
                             }
@@ -276,19 +381,19 @@ fun BarcodeScannerDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(24.dp)
+                            .padding(20.dp)
                     ) {
                         // Top-left
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
-                                .size(30.dp, 3.dp)
+                                .size(30.dp, 4.dp)
                                 .background(Color(0xFF00E676))
                         )
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
-                                .size(3.dp, 30.dp)
+                                .size(4.dp, 30.dp)
                                 .background(Color(0xFF00E676))
                         )
 
@@ -296,13 +401,13 @@ fun BarcodeScannerDialog(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .size(30.dp, 3.dp)
+                                .size(30.dp, 4.dp)
                                 .background(Color(0xFF00E676))
                         )
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .size(3.dp, 30.dp)
+                                .size(4.dp, 30.dp)
                                 .background(Color(0xFF00E676))
                         )
 
@@ -310,13 +415,13 @@ fun BarcodeScannerDialog(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
-                                .size(30.dp, 3.dp)
+                                .size(30.dp, 4.dp)
                                 .background(Color(0xFF00E676))
                         )
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
-                                .size(3.dp, 30.dp)
+                                .size(4.dp, 30.dp)
                                 .background(Color(0xFF00E676))
                         )
 
@@ -324,13 +429,13 @@ fun BarcodeScannerDialog(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(30.dp, 3.dp)
+                                .size(30.dp, 4.dp)
                                 .background(Color(0xFF00E676))
                         )
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(3.dp, 30.dp)
+                                .size(4.dp, 30.dp)
                                 .background(Color(0xFF00E676))
                         )
                     }
@@ -338,208 +443,198 @@ fun BarcodeScannerDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Result Card if scanned
+                // Detection Result Card
                 if (scannedResult != null) {
-                    val (code, matchedStock) = scannedResult!!
+                    val (code, matched) = scannedResult!!
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF263238)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = borderFromColor(Color(0xFF4CAF50))
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (matched != null) Color(0xFF1B5E20) else Color(0xFF37474F)
+                        )
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = Color(0xFF4CAF50),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E676),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
                                     Text(
-                                        text = "BARCODE TERDETEKSI",
-                                        color = Color(0xFF81C784),
+                                        text = if (matched != null) "SPAREPART DITEMUKAN!" else "KODE TERDETEKSI",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
+                                        fontSize = 13.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Barcode: $code",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFFB9F6CA)
                                     )
                                 }
-                                Text(
-                                    text = code,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            if (matchedStock != null) {
+                            if (matched != null) {
+                                val rupiah = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "${matchedStock.name} (${matchedStock.brand})",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
+                                    text = matched.name,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 15.sp,
+                                    color = Color.White
                                 )
                                 Text(
-                                    text = "Kualitas: ${matchedStock.quality} | Sisa Stok: ${matchedStock.qty} pcs",
-                                    color = Color.LightGray,
-                                    fontSize = 12.sp
+                                    text = "${matched.brand} • ${matched.quality} • Stok: ${matched.qty} pcs",
+                                    fontSize = 11.sp,
+                                    color = Color.LightGray
                                 )
                                 Text(
-                                    text = "Harga Jual: ${formatRupiahSimple(matchedStock.sellPrice)}",
-                                    color = Color(0xFF66BB6A),
+                                    text = "Harga: ${rupiah.format(matched.sellPrice)}",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFFFD54F)
                                 )
                             } else {
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Kode Barcode: $code (Belum terdaftar di stok)",
-                                    color = Color.Yellow,
-                                    fontSize = 12.sp
+                                    text = "Item belum terdaftar di database stok.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFFCC80)
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
-
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.End
                             ) {
                                 OutlinedButton(
                                     onClick = { scannedResult = null },
-                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("Scan Ulang", color = Color.White, fontSize = 12.sp)
+                                    Text("Scan Ulang", fontSize = 11.sp)
                                 }
-
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Button(
                                     onClick = {
-                                        onBarcodeScanned(code, matchedStock)
-                                        onDismiss()
+                                        onBarcodeScanned(code, matched)
                                     },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("PILIH BARANG", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Gunakan Barcode", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // Quick Scan Tester Chips (Crucial for emulators without physical cameras)
-                Text(
-                    text = "PILIHAN BARCODE CEPAT (Klik untuk Uji Scan):",
-                    color = Color.LightGray,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                val sampleStocks = if (registeredStocks.isNotEmpty()) registeredStocks else listOf(
-                    StockItem(name = "OLI SHEL", brand = "Shell AX7", quality = "Original", modalPrice = 50000L, sellPrice = 65000L, qty = 12, barcode = "899100210036"),
-                    StockItem(name = "KANVAS REM", brand = "AHM", quality = "Original", modalPrice = 14000L, sellPrice = 20000L, qty = 20, barcode = "899300410043"),
-                    StockItem(name = "BUSI", brand = "NGK", quality = "Original", modalPrice = 15000L, sellPrice = 25000L, qty = 25, barcode = "899400510050"),
-                    StockItem(name = "KOMSTIR", brand = "Aspira", quality = "Original", modalPrice = 60000L, sellPrice = 85000L, qty = 12, barcode = "899275310012"),
-                    StockItem(name = "KLAKSON", brand = "Denso", quality = "OEM", modalPrice = 45000L, sellPrice = 65000L, qty = 6, barcode = "899275310029"),
-                    StockItem(name = "VANBELT MATIC", brand = "Gates Power", quality = "Konsinyasi", modalPrice = 90000L, sellPrice = 120000L, qty = 10, barcode = "899500610067")
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(sampleStocks) { stock ->
-                        val code = if (stock.barcode.isNotBlank()) stock.barcode else "BRG-${stock.id}"
-                        Card(
-                            modifier = Modifier.clickable {
-                                handleCodeFound(code)
-                            },
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF37474F)),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                Text(
-                                    text = stock.name,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = code,
-                                    color = Color(0xFF80CBC4),
-                                    fontSize = 10.sp
-                                )
-                                Text(
-                                    text = formatRupiahSimple(stock.sellPrice),
-                                    color = Color(0xFFA5D6A7),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
+                // Quick Barcode Chips (Quick select from registered stocks)
+                if (registeredStocks.isNotEmpty() && scannedResult == null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Atau Pilih Cepat dari Stok:",
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.Start)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(registeredStocks.take(8)) { item ->
+                            Surface(
+                                color = Color.White.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.clickable {
+                                    handleCodeFound(item.barcode.ifBlank { item.name })
+                                }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.QrCodeScanner,
+                                        contentDescription = null,
+                                        tint = Color(0xFF81C784),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = item.name,
+                                        color = Color.White,
+                                        fontSize = 11.sp
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Manual Input Toggle Button
-                TextButton(
-                    onClick = { showManualInput = !showManualInput },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
+                // Manual Code Input Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (showManualInput) "Tutup Input Manual" else "Ketik Nomor Barcode Manual", fontSize = 12.sp)
+                    TextButton(
+                        onClick = { showManualInput = !showManualInput }
+                    ) {
+                        Icon(
+                            Icons.Default.Keyboard,
+                            contentDescription = null,
+                            tint = Color(0xFF81C784),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (showManualInput) "Sembunyikan Input Manual" else "Ketik Barcode Manual",
+                            color = Color(0xFF81C784),
+                            fontSize = 12.sp
+                        )
+                    }
                 }
 
                 if (showManualInput) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedTextField(
                             value = manualCodeInput,
                             onValueChange = { manualCodeInput = it },
-                            placeholder = { Text("Masukkan Barcode / SKU...", color = Color.Gray) },
+                            placeholder = { Text("Ketik kode barcode / SKU", fontSize = 12.sp, color = Color.Gray) },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(8.dp)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 if (manualCodeInput.isNotBlank()) {
-                                    handleCodeFound(manualCodeInput.trim())
+                                    handleCodeFound(manualCodeInput)
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("CARI", fontSize = 12.sp)
+                            Text("Cari", fontSize = 11.sp)
                         }
                     }
                 }
             }
         }
     }
-}
-
-private fun borderFromColor(color: Color) = androidx.compose.foundation.BorderStroke(1.dp, color)
-
-private fun formatRupiahSimple(amount: Long): String {
-    val formatter = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
-    formatter.maximumFractionDigits = 0
-    return formatter.format(amount)
 }

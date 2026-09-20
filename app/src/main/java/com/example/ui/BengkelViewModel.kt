@@ -49,6 +49,7 @@ enum class BengkelScreen {
     ABSEN,
     OMSET,
     REPORT,
+    MARKETING,
     PENGATURAN
 }
 
@@ -131,6 +132,9 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
 
     private val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     val attendanceList: StateFlow<List<AttendanceRecord>> = repository.getAttendanceByDate(todayStr)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allAttendanceRecords: StateFlow<List<AttendanceRecord>> = repository.allAttendanceRecords
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val cashDeposits: StateFlow<List<CashDeposit>> = repository.cashDeposits
@@ -592,11 +596,22 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
 
     fun addNewStaff(name: String, role: String, phone: String) {
         viewModelScope.launch {
+            val upperName = name.trim().uppercase()
             repository.insertStaffMember(
                 StaffMember(
-                    name = name.uppercase(),
-                    role = role.uppercase(),
-                    phone = phone
+                    name = upperName,
+                    role = role.trim().uppercase(),
+                    phone = phone.trim()
+                )
+            )
+            // Auto masuk absen hari ini
+            repository.insertOrUpdateAttendance(
+                AttendanceRecord(
+                    staffName = upperName,
+                    dateString = todayStr,
+                    status = AttendanceStatus.MASUK,
+                    timeCheckIn = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                    notes = "Otomatis masuk dari Tambah Staff"
                 )
             )
         }
@@ -605,19 +620,32 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     fun deleteStaff(staff: StaffMember) {
         viewModelScope.launch {
             repository.deleteStaffMember(staff)
+            // Auto hapus dari riwayat absen
+            repository.deleteAttendanceByStaffName(staff.name)
         }
     }
 
     fun addStaffMember(name: String, role: String, phone: String, context: Context) {
         viewModelScope.launch {
+            val upperName = name.trim().uppercase()
             repository.insertStaffMember(
                 StaffMember(
-                    name = name,
-                    role = role,
-                    phone = phone
+                    name = upperName,
+                    role = role.trim().uppercase(),
+                    phone = phone.trim()
                 )
             )
-            Toast.makeText(context, "Staff $name ($role) ditambahkan", Toast.LENGTH_SHORT).show()
+            // Auto masuk absen hari ini
+            repository.insertOrUpdateAttendance(
+                AttendanceRecord(
+                    staffName = upperName,
+                    dateString = todayStr,
+                    status = AttendanceStatus.MASUK,
+                    timeCheckIn = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                    notes = "Otomatis masuk dari Tambah Staff"
+                )
+            )
+            Toast.makeText(context, "Staff $upperName ($role) ditambahkan & otomatis masuk absen", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -626,6 +654,107 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
             BengkelDatabase.populateInitialData(BengkelDatabase.getDatabase(context, viewModelScope).bengkelDao())
             Toast.makeText(context, "Data demo Bengkel Qu berhasil di-reset", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun syncMasterData(context: Context) {
+        viewModelScope.launch {
+            repository.syncMasterData()
+            Toast.makeText(context, "Sinkronisasi Master Selesai! Katalog sparepart dan data master diperbarui.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun resetAllDataToZero(context: Context) {
+        viewModelScope.launch {
+            repository.resetAllToZero()
+            Toast.makeText(context, "Reset Berhasil: Transaksi, omset, stok, kasir, antrian, absen, dan pengajuan telah kembali ke 0.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // --- Export Reports Excel & WhatsApp ---
+    fun exportOmsetExcel(context: Context, filterLabel: String, list: List<CustomerService>, sendViaWhatsApp: Boolean) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildOmsetReport(bName, filterLabel, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Laporan Omset - $filterLabel",
+            fileName = "Laporan_Omset_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
+    }
+
+    fun exportStockExcel(context: Context, filterLabel: String, list: List<StockItem>, sendViaWhatsApp: Boolean) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildStockReport(bName, filterLabel, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Laporan Stok Sparepart",
+            fileName = "Laporan_Stok_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
+    }
+
+    fun exportCustomerDetailExcel(context: Context, filterLabel: String, list: List<CustomerService>, sendViaWhatsApp: Boolean) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildCustomerDetailReport(bName, filterLabel, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Rekap Detail Customer - $filterLabel",
+            fileName = "Detail_Customer_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
+    }
+
+    fun exportAttendanceExcel(context: Context, monthLabel: String, list: List<AttendanceRecord>, sendViaWhatsApp: Boolean) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildAttendanceReport(bName, monthLabel, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Laporan Absensi Karyawan - $monthLabel",
+            fileName = "Laporan_Absen_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
+    }
+
+    fun exportLoyalCustomerExcel(
+        context: Context,
+        list: List<com.example.util.ReportExporter.LoyalCustomerData>,
+        sendViaWhatsApp: Boolean
+    ) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildLoyalCustomerReport(bName, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Ranking Loyal Customer - $bName",
+            fileName = "Loyal_Customer_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
+    }
+
+    fun exportWaBlastExcel(
+        context: Context,
+        list: List<com.example.util.ReportExporter.WaBlastCustomerData>,
+        sendViaWhatsApp: Boolean
+    ) {
+        val bName = workshopProfile.value?.workshopName ?: "BENGKEL QU"
+        val (csv, wa) = com.example.util.ReportExporter.buildWaBlastReport(bName, list)
+        com.example.util.ReportExporter.shareReport(
+            context = context,
+            title = "Laporan WA Blast Pelanggan 1 Bulan - $bName",
+            fileName = "WA_Blast_1Bulan_${System.currentTimeMillis()}.csv",
+            csvContent = csv,
+            waSummaryText = wa,
+            sendViaWhatsApp = sendViaWhatsApp
+        )
     }
 
     // --- Backup, Restore & Reset Methods ---

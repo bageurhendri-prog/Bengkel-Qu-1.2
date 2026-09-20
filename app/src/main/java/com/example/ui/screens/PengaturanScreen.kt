@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
@@ -162,6 +164,10 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
         }
     }
 
+    val hasProAccess = remember(profile) {
+        FeatureGate.hasProAccess(context, profile)
+    }
+
     Scaffold(
         topBar = {
             BengkelTopBar(
@@ -170,15 +176,153 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        if (!hasProAccess) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFFEBEE)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "Fitur Pro Terkunci",
+                        tint = Color(0xFFC62828),
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Pengaturan (Khusus PRO)",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFC62828)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Masa trial 10 hari telah selesai atau serial number PRO belum aktif. Menu Pengaturan, Kelola Staff, dan Reset Data hanya dapat diakses pada versi Bengkel Qu PRO.",
+                    fontSize = 13.sp,
+                    color = Color.Gray,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = { showProActivationDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AKTIFKAN SERIAL NUMBER PRO", fontWeight = FontWeight.Bold)
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // SECTION: PANDUAN TEKNIS SERIAL NUMBER
+                var inputDirectKey by remember { mutableStateOf("") }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
+                    border = BorderStroke(1.dp, Color(0xFF81C784)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF2E7D32))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "PANDUAN TEKNIS SERIAL NUMBER",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF1B5E20)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Aktivasi Serial Number sistem Langganan Bulanan PRO. Buka seluruh fitur eksklusif tanpa batasan.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF33691E)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Format SN: BENGKELQU-PRO-XXXX atau BQPRO-XXXX-XXXX\nHubungi Developer: 085714216556 / bageurhendri@gmail.com",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1B5E20)
+                        )
+
+                        if (!isPro) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = inputDirectKey,
+                                onValueChange = { inputDirectKey = it.uppercase() },
+                                label = { Text("Masukkan Serial Number PRO") },
+                                placeholder = { Text("BENGKELQU-PRO-XXXX-XXXX") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = {
+                                    if (inputDirectKey.isNotBlank()) {
+                                        viewModel.activateProLicense(inputDirectKey.trim(), context) { success, _ ->
+                                            if (success) {
+                                                inputDirectKey = ""
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("AKTIFKAN SERIAL NUMBER SEKARANG", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF2E7D32))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("STATUS: PRO LIFETIME AKTIF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
             // SECTION: STATUS LISENSI & FITUR (REGULER vs PRO)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -361,7 +505,7 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = "Nama Bengkel: ${profile?.workshopName ?: "BENGKEL QU"}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "Pemilik: ${profile?.ownerName ?: "Hendri"}", fontSize = 13.sp)
-                    Text(text = "No. Telepon: ${profile?.phone ?: "081234567890"}", fontSize = 13.sp)
+                    Text(text = "No. Telepon: ${profile?.phone ?: "085714216556"}", fontSize = 13.sp)
                     Text(text = "Email: ${profile?.email ?: "bageurhendri@gmail.com"}", fontSize = 13.sp)
                     Text(text = "Alamat: ${profile?.address ?: "Jl. Otomotif No. 88, Bandung"}", fontSize = 12.sp, color = Color.Gray)
                 }
@@ -631,12 +775,13 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
             }
         }
     }
+}
 
     // Modal: Ubah Profil
     if (showEditProfileDialog) {
         var bengkelName by remember { mutableStateOf(profile?.workshopName ?: "BENGKEL QU") }
         var ownerName by remember { mutableStateOf(profile?.ownerName ?: "Hendri") }
-        var phone by remember { mutableStateOf(profile?.phone ?: "081234567890") }
+        var phone by remember { mutableStateOf(profile?.phone ?: "085714216556") }
         var email by remember { mutableStateOf(profile?.email ?: "bageurhendri@gmail.com") }
         var address by remember { mutableStateOf(profile?.address ?: "Jl. Otomotif No. 88, Bandung") }
 
@@ -1024,7 +1169,39 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Opsi 2: Reset Pabrik Total
+                    // Opsi 2: Reset Total ke 0 (Sesuai Permintaan User)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { resetActionType = "RESET_ALL_ZERO" },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (resetActionType == "RESET_ALL_ZERO") Color(0xFFFFEBEE) else Color(0xFFFAFAFA)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (resetActionType == "RESET_ALL_ZERO") 2.dp else 1.dp,
+                            color = if (resetActionType == "RESET_ALL_ZERO") Color(0xFFD32F2F) else Color(0xFFE0E0E0)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "2. Reset Semua Kembali ke 0 (Total Reset)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFFC62828)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Absen hapus, omset hapus, stok hapus, kasir hapus, selesai, antrian, absen, pengajuan reject, report persetujuan hapus, semua kembali ke 0.",
+                                fontSize = 11.sp,
+                                color = Color.DarkGray
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Opsi 3: Reset Pabrik Total (Data Demo)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1040,14 +1217,14 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                text = "2. Reset Total ke Data Pabrik (Factory Reset)",
+                                text = "3. Reset ke Data Awal Demo Bawaan",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color(0xFFC62828)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Menghapus semua data dan mengembalikan sistem ke data awal demo bawaan bengkel.",
+                                text = "Menghapus semua data dan memulihkan kembali data demo bawaan bengkel.",
                                 fontSize = 11.sp,
                                 color = Color.DarkGray
                             )
@@ -1089,10 +1266,10 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
             text = {
                 Column {
                     Text(
-                        text = if (resetActionType == "TRANSAKSI") {
-                            "Anda akan menghapus seluruh data riwayat transaksi kasir dan servis antrian. Tindakan ini tidak dapat dibatalkan."
-                        } else {
-                            "Anda akan mereset database total ke konfigurasi awal bawaan demo. Seluruh data baru akan hilang."
+                        text = when (resetActionType) {
+                            "TRANSAKSI" -> "Anda akan menghapus seluruh data riwayat transaksi kasir dan servis antrian."
+                            "RESET_ALL_ZERO" -> "Absen hapus, omset hapus, stok hapus, kasir hapus, servis selesai, antrian, pengajuan reject, report persetujuan hapus, semua kembali ke 0."
+                            else -> "Anda akan mereset database total ke konfigurasi awal bawaan demo."
                         },
                         fontSize = 12.sp,
                         color = Color.Black
@@ -1117,10 +1294,10 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                 Button(
                     onClick = {
                         if (confirmText.trim().equals("RESET", ignoreCase = true)) {
-                            if (resetActionType == "TRANSAKSI") {
-                                viewModel.resetTransactionsOnly(context)
-                            } else {
-                                viewModel.resetFactoryDefaults(context)
+                            when (resetActionType) {
+                                "TRANSAKSI" -> viewModel.resetTransactionsOnly(context)
+                                "RESET_ALL_ZERO" -> viewModel.resetAllDataToZero(context)
+                                else -> viewModel.resetFactoryDefaults(context)
                             }
                             showResetConfirmDialog = false
                         } else {

@@ -106,6 +106,12 @@ interface BengkelDao {
     @Query("SELECT * FROM attendance_records WHERE dateString = :dateString ORDER BY staffName ASC")
     fun getAttendanceByDate(dateString: String): Flow<List<AttendanceRecord>>
 
+    @Query("SELECT * FROM attendance_records ORDER BY dateString DESC, timeCheckIn DESC")
+    fun getAllAttendanceRecords(): Flow<List<AttendanceRecord>>
+
+    @Query("DELETE FROM attendance_records WHERE staffName = :staffName OR staffName = UPPER(:staffName)")
+    suspend fun deleteAttendanceByStaffName(staffName: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateAttendance(record: AttendanceRecord): Long
 

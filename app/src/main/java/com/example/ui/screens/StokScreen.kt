@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,15 +24,19 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,6 +84,7 @@ fun StokScreen(viewModel: BengkelViewModel) {
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var stockFilter by remember { mutableStateOf("Semua") }
 
     var showAddStockDialog by remember { mutableStateOf(false) }
     var showAddIncomingDialog by remember { mutableStateOf(false) }
@@ -91,12 +97,20 @@ fun StokScreen(viewModel: BengkelViewModel) {
     var proGateTitle by remember { mutableStateOf("") }
     var proGateReason by remember { mutableStateOf("") }
 
-    val filteredStocks = if (searchQuery.isBlank()) allStocks else {
-        allStocks.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-                    it.brand.contains(searchQuery, ignoreCase = true) ||
-                    it.barcode.contains(searchQuery, ignoreCase = true)
+    val filteredStocks = allStocks.filter { item ->
+        val matchesSearch = searchQuery.isBlank() ||
+                item.name.contains(searchQuery, ignoreCase = true) ||
+                item.brand.contains(searchQuery, ignoreCase = true) ||
+                item.barcode.contains(searchQuery, ignoreCase = true)
+
+        val matchesFilter = when (stockFilter) {
+            "Jual Putus" -> item.status == StockStatus.JUAL_PUTUS
+            "Konsinyasi" -> item.status == StockStatus.KONSINYASI
+            "Stok Menipis (<=5)" -> item.qty <= 5
+            else -> true
         }
+
+        matchesSearch && matchesFilter
     }
 
     Scaffold(
@@ -107,30 +121,16 @@ fun StokScreen(viewModel: BengkelViewModel) {
                 actions = {
                     IconButton(
                         onClick = {
-                            val gate = FeatureGate.canUseBarcodeScanner(isPro)
-                            if (gate is FeatureGate.GateResult.Denied) {
-                                proGateTitle = gate.featureName
-                                proGateReason = gate.reason
-                                showProUpgradeDialog = true
-                            } else {
-                                barcodeForNewItem = ""
-                                showBarcodeScanner = true
-                            }
+                            barcodeForNewItem = ""
+                            showBarcodeScanner = true
                         }
                     ) {
                         Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = Color.White)
                     }
                     IconButton(
                         onClick = {
-                            val gate = FeatureGate.canAddStock(allStocks.size, isPro)
-                            if (gate is FeatureGate.GateResult.Denied) {
-                                proGateTitle = gate.featureName
-                                proGateReason = gate.reason
-                                showProUpgradeDialog = true
-                            } else {
-                                barcodeForNewItem = ""
-                                showAddStockDialog = true
-                            }
+                            barcodeForNewItem = ""
+                            showAddStockDialog = true
                         },
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
@@ -175,15 +175,8 @@ fun StokScreen(viewModel: BengkelViewModel) {
 
                 Button(
                     onClick = {
-                        val gate = FeatureGate.canUseBarcodeScanner(isPro)
-                        if (gate is FeatureGate.GateResult.Denied) {
-                            proGateTitle = gate.featureName
-                            proGateReason = gate.reason
-                            showProUpgradeDialog = true
-                        } else {
-                            barcodeForNewItem = ""
-                            showBarcodeScanner = true
-                        }
+                        barcodeForNewItem = ""
+                        showBarcodeScanner = true
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                     shape = RoundedCornerShape(12.dp),
@@ -262,24 +255,86 @@ fun StokScreen(viewModel: BengkelViewModel) {
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "KATALOG SPAREPART",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                OutlinedButton(
-                                    onClick = { showAddStockDialog = true },
-                                    shape = RoundedCornerShape(8.dp)
+                            // Filter status & Export Buttons (Excel / WA)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(listOf("Semua", "Jual Putus", "Konsinyasi", "Stok Menipis (<=5)")) { opt ->
+                                        FilterChip(
+                                            selected = stockFilter == opt,
+                                            onClick = { stockFilter = opt },
+                                            label = { Text(opt, fontSize = 11.sp) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                selectedLabelColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("+ BARANG", fontSize = 11.sp)
+                                    Button(
+                                        onClick = {
+                                            viewModel.exportStockExcel(
+                                                context = context,
+                                                filterLabel = stockFilter,
+                                                list = filteredStocks,
+                                                sendViaWhatsApp = false
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(42.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("SIMPAN EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            viewModel.exportStockExcel(
+                                                context = context,
+                                                filterLabel = stockFilter,
+                                                list = filteredStocks,
+                                                sendViaWhatsApp = true
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(42.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+                                    ) {
+                                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("SEND WA EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "KATALOG SPAREPART (${filteredStocks.size} ITEM)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(
+                                        onClick = { showAddStockDialog = true },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("+ BARANG", fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
