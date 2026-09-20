@@ -20,11 +20,25 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Accept Android SDK Licenses
+      run: |
+        yes | sdkmanager --licenses || true
+
+    - name: Prepare environment and debug keystore
+      run: |
+        if [ ! -f .env ]; then
+          cp .env.example .env 2>/dev/null || touch .env
+        fi
+        if [ ! -f debug.keystore ]; then
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
+        chmod +x gradlew
 
     - name: Build APK with Gradle
-      run: ./gradlew assembleDebug --no-daemon
+      run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
