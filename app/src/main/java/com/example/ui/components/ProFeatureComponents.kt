@@ -25,9 +25,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
@@ -37,6 +41,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,7 +57,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,8 +74,13 @@ fun ProFeatureBadge(
     onClick: (() -> Unit)? = null
 ) {
     val (bgColor, textColor, label) = when {
-        isPro || trialStatus is FeatureGate.TrialStatus.ProActivated -> {
-            Triple(Color(0xFFFFB300), Color(0xFF3E2723), "PRO AKTIF")
+        trialStatus is FeatureGate.TrialStatus.ProActivated || isPro -> {
+            val remain = (trialStatus as? FeatureGate.TrialStatus.ProActivated)?.daysRemaining
+            if (remain != null) {
+                Triple(Color(0xFFFFB300), Color(0xFF3E2723), "PRO: SISA ${remain}H")
+            } else {
+                Triple(Color(0xFFFFB300), Color(0xFF3E2723), "PRO AKTIF")
+            }
         }
         trialStatus is FeatureGate.TrialStatus.TrialActive -> {
             if (trialStatus.isUrgentWarning) {
@@ -76,6 +88,9 @@ fun ProFeatureBadge(
             } else {
                 Triple(Color(0xFF26A69A), Color.White, "TRIAL 10 HARI")
             }
+        }
+        trialStatus is FeatureGate.TrialStatus.Expired -> {
+            Triple(Color(0xFFE53935), Color.White, "TRIAL HABIS")
         }
         else -> {
             Triple(Color(0xFF78909C), Color.White, "REGULER")
@@ -155,53 +170,70 @@ fun TrialStatusBanner(
 ) {
     when (trialStatus) {
         is FeatureGate.TrialStatus.TrialActive -> {
-            if (trialStatus.isUrgentWarning) {
-                Card(
-                    modifier = modifier
+            Card(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .clickable(onClick = onActivateClick),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (trialStatus.isUrgentWarning) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (trialStatus.isUrgentWarning) Color(0xFFFF9800) else Color(0xFF81C784)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
-                    border = BorderStroke(1.5.dp, Color(0xFFFF9800))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (trialStatus.isUrgentWarning) Color(0xFFFFE0B2) else Color(0xFFC8E6C9)
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFFFE0B2)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100))
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "MASA TRIAL PRO TERSISA ${trialStatus.daysRemaining} HARI (H-${trialStatus.daysRemaining})",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color(0xFFBF360C)
-                            )
-                            Text(
-                                text = "Fitur Laporan Omset & Pengaturan akan terkunci setelah masa trial habis.",
-                                fontSize = 11.sp,
-                                color = Color(0xFF5D4037)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onActivateClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text("AKTIVASI", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(
+                            imageVector = if (trialStatus.isUrgentWarning) Icons.Default.Warning else Icons.Default.Stars,
+                            contentDescription = null,
+                            tint = if (trialStatus.isUrgentWarning) Color(0xFFE65100) else Color(0xFF2E7D32),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (trialStatus.isUrgentWarning) {
+                                "TRIAL PRO: SISA ${trialStatus.daysRemaining} HARI (H-${trialStatus.daysRemaining})"
+                            } else {
+                                "TRIAL PRO AKTIF: SISA ${trialStatus.daysRemaining} HARI"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (trialStatus.isUrgentWarning) Color(0xFFBF360C) else Color(0xFF1B5E20)
+                        )
+                        Text(
+                            text = "Fitur kasir & data lokal selalu aktif. Sentuh untuk lihat paket PRO.",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Button(
+                        onClick = onActivateClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (trialStatus.isUrgentWarning) Color(0xFFE65100) else Color(0xFF2E7D32)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("PAKET PRO", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -210,72 +242,79 @@ fun TrialStatusBanner(
             Card(
                 modifier = modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .clickable(onClick = onActivateClick),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                border = BorderStroke(1.5.dp, Color(0xFFE53935))
+                border = BorderStroke(1.2.dp, Color(0xFFE53935))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFFFCDD2)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFC62828))
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "TRIAL 10 HARI TELAH BERAKHIR",
+                            text = "MASA TRIAL 10 HARI TELAH BERAKHIR",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = Color(0xFFB71C1C)
                         )
                         Text(
-                            text = "Fitur Laporan Omset & Pengaturan Pro kini terkunci 🔒. Masukkan Serial Number untuk membuka.",
-                            fontSize = 11.sp,
+                            text = "Kasir & data aman. Upgrade PRO mulai Rp1.000/hari.",
+                            fontSize = 10.sp,
                             color = Color(0xFF4E342E)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Button(
                         onClick = onActivateClick,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text("INPUT SN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("AKTIVASI", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
         is FeatureGate.TrialStatus.ProActivated -> {
-            // No warning banner needed when official PRO is active
+            // No warning needed for active Pro
         }
     }
 }
 
 /**
- * Direct Technical Serial Number Activation Dialog.
- * Does NOT contain demo keys/shortcuts. Directly provides technical instructions and activation.
+ * Comprehensive Pop-up Dialog for 10-Day Trial, Package Options (1, 3, 6, 12 months @ Rp1.000/hari),
+ * Device-Bound ID, WhatsApp Developer Order, and Serial Number Activation.
+ * Follows the Non-Blocking Principle.
  */
 @Composable
-fun ProUpgradeDialog(
-    featureTitle: String,
-    reasonText: String,
+fun ProTrialPackagesDialog(
+    trialStatus: FeatureGate.TrialStatus,
+    workshopName: String,
     onDismiss: () -> Unit,
     onActivateKey: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val deviceId = remember { FeatureGate.getDeviceId(context) }
+    var selectedPlanCode by remember { mutableStateOf("30D") }
     var serialNumberInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
+
+    val selectedPlan = FeatureGate.PRO_PLANS.find { it.code == selectedPlanCode } ?: FeatureGate.PRO_PLANS[0]
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -286,133 +325,216 @@ fun ProUpgradeDialog(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(42.dp)
                         .background(Color(0xFFFFF8E1), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.Lock,
+                        imageVector = Icons.Default.WorkspacePremium,
                         contentDescription = null,
                         tint = Color(0xFFF57F17),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "AKTIVASI LISENSI PRO",
+                        text = "BENGKEL QU PRO",
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
-                        color = Color(0xFFE65100)
+                        fontSize = 17.sp,
+                        color = Color(0xFF1B5E20)
                     )
                     Text(
-                        text = featureTitle,
+                        text = when (trialStatus) {
+                            is FeatureGate.TrialStatus.TrialActive -> "Trial Otomatis 10 Hari (Sisa ${trialStatus.daysRemaining} Hari)"
+                            is FeatureGate.TrialStatus.Expired -> "Masa Trial 10 Hari Selesai"
+                            is FeatureGate.TrialStatus.ProActivated -> "Lisensi PRO Sedang Aktif"
+                        },
                         fontSize = 11.sp,
-                        color = Color.Gray
+                        color = if (trialStatus is FeatureGate.TrialStatus.Expired) Color(0xFFD32F2F) else Color(0xFF2E7D32),
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
         },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Non-Blocking Principle Banner
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFFCC80)),
-                    modifier = Modifier.fillMaxWidth()
+                    border = BorderStroke(1.dp, Color(0xFFA5D6A7))
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = Color(0xFF2E7D32),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = reasonText,
-                            fontSize = 12.sp,
-                            color = Color(0xFFBF360C),
-                            fontWeight = FontWeight.Medium
+                            text = "Prinsip Non-Blocking: Fitur dasar Kasir, Antrian Servis, Nota Billing, dan Data Stok Lokal tetap 100% AMAN & AKTIF selamanya tanpa terkunci.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF1B5E20),
+                            lineHeight = 15.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Panduan Teknis Serial Number
-                Text(
-                    text = "PANDUAN TEKNIS SERIAL NUMBER:",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                // Header Paket
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "1. Lisensi PRO menggunakan sistem langganan bulanan.",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B5E20)
-                        )
-                        Text(
-                            text = "2. Format resmi: BQPRO-XXXX-XXXX atau BENGKELQU-PRO-XXXX",
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.DarkGray
-                        )
-                        Text(
-                            text = "3. Hubungi Developer langsung: WA 085714216556 / bageurhendri@gmail.com untuk aktivasi & perpanjangan bulanan.",
-                            fontSize = 11.sp,
-                            color = Color(0xFF0D47A1),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "Masukkan Serial Number:",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedTextField(
-                    value = serialNumberInput,
-                    onValueChange = {
-                        serialNumberInput = it.uppercase()
-                        errorMessage = ""
-                    },
-                    placeholder = { Text("Contoh: BQPRO-2026-8899-KQU") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFFF57F17))
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (errorMessage.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = errorMessage,
-                        color = Color(0xFFD32F2F),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        text = "PILIHAN PAKET PRO (Rp 1.000/HARI):",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Grid of 4 Duration Plans
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FeatureGate.PRO_PLANS.forEach { plan ->
+                        val isSelected = selectedPlanCode == plan.code
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPlanCode = plan.code },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) Color(0xFFF1F8E9) else Color(0xFFF5F5F5)
+                            ),
+                            border = BorderStroke(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) Color(0xFF2E7D32) else Color(0xFFE0E0E0)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) Color(0xFF2E7D32) else Color.LightGray),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = plan.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (isSelected) Color(0xFF1B5E20) else Color.Black
+                                        )
+                                        Text(
+                                            text = plan.badge,
+                                            fontSize = 10.sp,
+                                            color = if (isSelected) Color(0xFF388E3C) else Color.Gray,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = plan.priceText,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                    color = if (isSelected) Color(0xFF1B5E20) else Color.DarkGray
+                                )
+                            }
+                        }
+                    }
+                }
 
-                // Tombol Bantuan Teknis WhatsApp Langsung
+                // Device ID Information Card (Device-Bound Security)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
+                    border = BorderStroke(1.dp, Color(0xFFFFE082))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFFF57F17), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "ID PERANGKAT ANDA:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFE65100)
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(deviceId))
+                                    Toast.makeText(context, "ID Perangkat berhasil disalin: $deviceId", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Salin ID", tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Text(
+                            text = deviceId,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFFBF360C)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Serial Number dibuat mandiri oleh Developer terikat khusus perangkat ini agar aman dan tidak dapat dibajak.",
+                            fontSize = 10.sp,
+                            color = Color(0xFF5D4037)
+                        )
+                    }
+                }
+
+                // Tombol Pesan Serial Number WhatsApp ke Developer
                 Button(
                     onClick = {
                         try {
-                            val url = "https://wa.me/${FeatureGate.SUPPORT_WHATSAPP_NUMBER}?text=Halo%20Admin%20BengkelQu,%20saya%20ingin%20aktivasi%20Serial%20Number%20PRO"
+                            val msg = "Halo Developer BengkelQu, saya ingin aktivasi paket PRO:\n" +
+                                    "- Paket: ${selectedPlan.title} (${selectedPlan.priceText})\n" +
+                                    "- Nama Bengkel: $workshopName\n" +
+                                    "- ID Perangkat: $deviceId\n" +
+                                    "Mohon dikirimkan Serial Number resmi. Terima kasih!"
+                            val encodedMsg = Uri.encode(msg)
+                            val url = "https://wa.me/${FeatureGate.SUPPORT_WHATSAPP_NUMBER}?text=$encodedMsg"
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                             context.startActivity(intent)
                         } catch (e: Exception) {
@@ -420,12 +542,49 @@ fun ProUpgradeDialog(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().height(44.dp)
                 ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Hubungi Bantuan Teknis (WhatsApp)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "ORDER SN VIA WHATSAPP DEVELOPER",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Input Serial Number
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Sudah memiliki Serial Number? Masukkan di sini:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                    OutlinedTextField(
+                        value = serialNumberInput,
+                        onValueChange = {
+                            serialNumberInput = it.uppercase()
+                            errorMessage = ""
+                        },
+                        placeholder = { Text("Contoh: BQPRO-30D-XXXX-XXXX") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF2E7D32))
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (errorMessage.isNotBlank()) {
+                        Text(
+                            text = errorMessage,
+                            color = Color(0xFFD32F2F),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         },
@@ -438,17 +597,37 @@ fun ProUpgradeDialog(
                         errorMessage = "Ketikkan Serial Number resmi Anda terlebih dahulu."
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57F17)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("AKTIFKAN SEKARANG", fontWeight = FontWeight.Bold)
+                Text("AKTIFKAN PRO", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("NANTI SAJA")
+                Text("LANJUTKAN GRATIS", color = Color.Gray, fontWeight = FontWeight.SemiBold)
             }
         }
+    )
+}
+
+/**
+ * Backward compatibility dialogs wrapper
+ */
+@Composable
+fun ProUpgradeDialog(
+    featureTitle: String,
+    reasonText: String,
+    onDismiss: () -> Unit,
+    onActivateKey: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val trialStatus = remember { FeatureGate.getTrialStatus(context, null) }
+    ProTrialPackagesDialog(
+        trialStatus = trialStatus,
+        workshopName = "BENGKEL QU",
+        onDismiss = onDismiss,
+        onActivateKey = onActivateKey
     )
 }
 
@@ -459,13 +638,12 @@ fun ProFeatureComparisonDialog(
     onOpenActivation: () -> Unit = {},
     onActivateKey: (String) -> Unit = {}
 ) {
-    ProUpgradeDialog(
-        featureTitle = "PERBANDINGAN FITUR REGULER vs PRO",
-        reasonText = "Versi PRO memberikan kebebasan operasional seumur hidup: kuota stok sparepart tanpa batas, antrian servis unlimited, scan barcode kamera cepat, laporan omset lengkap, kirim WA excel, dan manajemen staf penuh.",
+    val context = LocalContext.current
+    val trialStatus = remember { FeatureGate.getTrialStatus(context, null) }
+    ProTrialPackagesDialog(
+        trialStatus = trialStatus,
+        workshopName = "BENGKEL QU",
         onDismiss = onDismiss,
-        onActivateKey = { key ->
-            onActivateKey(key)
-            onOpenActivation()
-        }
+        onActivateKey = onActivateKey
     )
 }

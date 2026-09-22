@@ -82,6 +82,7 @@ import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
 import com.example.ui.components.ProFeatureBadge
 import com.example.ui.components.ProFeatureComparisonDialog
+import com.example.ui.components.ProTrialPackagesDialog
 import com.example.ui.components.ProUpgradeDialog
 import com.example.ui.theme.AppColorTheme
 import com.example.util.FeatureGate
@@ -103,6 +104,10 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
     val fontSizeScale by viewModel.fontSizeScale.collectAsStateWithLifecycle()
     val allStocks by viewModel.allStockItems.collectAsStateWithLifecycle()
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
+
+    val trialStatus = remember(profile) {
+        FeatureGate.getTrialStatus(context, profile)
+    }
 
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
@@ -171,306 +176,37 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
     Scaffold(
         topBar = {
             BengkelTopBar(
-                title = "PENGATURAN APLIKASI",
+                title = "PENGATURAN BENGKEL",
                 onBack = { viewModel.navigateTo(BengkelScreen.DASHBOARD) }
             )
         }
     ) { padding ->
-        if (!hasProAccess) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFEBEE)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Fitur Pro Terkunci",
-                        tint = Color(0xFFC62828),
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Pengaturan (Khusus PRO)",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFC62828)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Masa trial 10 hari telah selesai atau serial number PRO belum aktif. Menu Pengaturan, Kelola Staff, dan Reset Data hanya dapat diakses pada versi Bengkel Qu PRO.",
-                    fontSize = 13.sp,
-                    color = Color.Gray,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { showProActivationDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AKTIFKAN SERIAL NUMBER PRO", fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // SECTION: PANDUAN TEKNIS SERIAL NUMBER
-                var inputDirectKey by remember { mutableStateOf("") }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
-                    border = BorderStroke(1.dp, Color(0xFF81C784)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF2E7D32))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "PANDUAN TEKNIS SERIAL NUMBER",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color(0xFF1B5E20)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "Aktivasi Serial Number sistem Langganan Bulanan PRO. Buka seluruh fitur eksklusif tanpa batasan.",
-                            fontSize = 12.sp,
-                            color = Color(0xFF33691E)
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Format SN: BENGKELQU-PRO-XXXX atau BQPRO-XXXX-XXXX\nHubungi Developer: 085714216556 / bageurhendri@gmail.com",
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B5E20)
-                        )
-
-                        if (!isPro) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            OutlinedTextField(
-                                value = inputDirectKey,
-                                onValueChange = { inputDirectKey = it.uppercase() },
-                                label = { Text("Masukkan Serial Number PRO") },
-                                placeholder = { Text("BENGKELQU-PRO-XXXX-XXXX") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Button(
-                                onClick = {
-                                    if (inputDirectKey.isNotBlank()) {
-                                        viewModel.activateProLicense(inputDirectKey.trim(), context) { success, _ ->
-                                            if (success) {
-                                                inputDirectKey = ""
-                                            }
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("AKTIFKAN SERIAL NUMBER SEKARANG", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF2E7D32))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("STATUS: PRO LIFETIME AKTIF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            // SECTION: STATUS LISENSI & FITUR (REGULER vs PRO)
-            Card(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header Ringkas Status Lisensi
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isPro) Color(0xFFFFFDE7) else MaterialTheme.colorScheme.surface
-                ),
-                border = BorderStroke(1.dp, if (isPro) Color(0xFFFFD54F) else Color(0xFFCFD8DC)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.WorkspacePremium,
-                                contentDescription = null,
-                                tint = if (isPro) Color(0xFFF57F17) else Color(0xFF78909C)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "STATUS LISENSI APLIKASI",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = if (isPro) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        ProFeatureBadge(
-                            isPro = isPro,
-                            onClick = { showProComparisonDialog = true }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = if (isPro) {
-                            "Bengkel Qu PRO Aktif (Seumur Hidup). Semua fitur dan kuota operasional berjalan tanpa batasan."
-                        } else {
-                            "Versi Reguler (Starter Gratis). Kuota maksimal 50 sparepart, 15 antrian/hari, dan 2 staf."
-                        },
-                        fontSize = 12.sp,
-                        color = if (isPro) Color(0xFF5D4037) else Color.DarkGray
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Quota indicator boxes
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Stok Quota
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isPro) Color(0xFFFFF8E1) else Color(0xFFF5F5F5)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Stok Barang", fontSize = 10.sp, color = Color.Gray)
-                                Text(
-                                    text = if (isPro) "${allStocks.size} (Unlimited)" else "${allStocks.size} / 50",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = if (allStocks.size >= 50 && !isPro) Color.Red else Color.Black
-                                )
-                            }
-                        }
-
-                        // Antrian Quota
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isPro) Color(0xFFFFF8E1) else Color(0xFFF5F5F5)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Antrian/Hari", fontSize = 10.sp, color = Color.Gray)
-                                Text(
-                                    text = if (isPro) "${completedServices.size} (Unlimited)" else "${completedServices.size} / 15",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = Color.Black
-                                )
-                            }
-                        }
-
-                        // Barcode Scan Quota
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isPro) Color(0xFFFFF8E1) else Color(0xFFF5F5F5)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Scan Barcode", fontSize = 10.sp, color = Color.Gray)
-                                Text(
-                                    text = if (isPro) "Aktif (PRO)" else "Manual",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = if (isPro) Color(0xFF2E7D32) else Color(0xFF757575)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showProComparisonDialog = true },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Bandingkan Fitur", fontSize = 11.sp)
-                        }
-
-                        if (!isPro) {
-                            Button(
-                                onClick = { showProActivationDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57F17)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Aktivasi PRO", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { viewModel.deactivateProLicense(context) },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Uji Mode Reguler", fontSize = 11.sp, color = Color.Gray)
-                            }
-                        }
-                    }
-                }
+                Text(
+                    text = "KONFIGURASI SISTEM BENGKEL",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ProFeatureBadge(
+                    isPro = isPro,
+                    trialStatus = trialStatus,
+                    onClick = { showProActivationDialog = true }
+                )
             }
 
             // SECTION: PROFIL BENGKEL (matching diagram: "PROFIL")
@@ -775,7 +511,6 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
             }
         }
     }
-}
 
     // Modal: Ubah Profil
     if (showEditProfileDialog) {
@@ -1319,26 +1054,22 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
     }
 
     // PRO Licensing Dialogs
-    if (showProActivationDialog) {
-        ProUpgradeDialog(
-            featureTitle = "AKTIVASI LISENSI BENGKEL QU PRO",
-            reasonText = "Buka seluruh potensi operasional bengkel Anda dengan versi PRO: tanpa batas stok, antrian servis unlimited, scan barcode kamera cepat, dan cetak nota PDF resmi.",
-            onDismiss = { showProActivationDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
+    if (showProActivationDialog || showProComparisonDialog) {
+        ProTrialPackagesDialog(
+            trialStatus = trialStatus,
+            workshopName = profile?.workshopName ?: "BENGKEL QU",
+            onDismiss = {
+                showProActivationDialog = false
+                showProComparisonDialog = false
+            },
+            onActivateKey = { key: String ->
+                viewModel.activateProLicense(key, context) { success: Boolean, _ ->
                     if (success) {
                         showProActivationDialog = false
+                        showProComparisonDialog = false
                     }
                 }
             }
-        )
-    }
-
-    if (showProComparisonDialog) {
-        ProFeatureComparisonDialog(
-            isPro = isPro,
-            onDismiss = { showProComparisonDialog = false },
-            onOpenActivation = { showProActivationDialog = true }
         )
     }
 }

@@ -111,6 +111,10 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     private val _stockSearchQuery = MutableStateFlow("")
     val stockSearchQuery: StateFlow<String> = _stockSearchQuery.asStateFlow()
 
+    // Sync notification message for Dashboard pop-up
+    private val _syncNotification = MutableStateFlow<String?>(null)
+    val syncNotification: StateFlow<String?> = _syncNotification.asStateFlow()
+
     // Reactive Data Flows
     val activeServices: StateFlow<List<CustomerService>> = repository.activeServices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -659,8 +663,13 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     fun syncMasterData(context: Context) {
         viewModelScope.launch {
             repository.syncMasterData()
-            Toast.makeText(context, "Sinkronisasi Master Selesai! Katalog sparepart dan data master diperbarui.", Toast.LENGTH_SHORT).show()
+            _syncNotification.value = "Katalog sparepart dan data master servis berhasil disinkronkan ke database bengkel Anda."
+            Toast.makeText(context, "Sinkronisasi Master Selesai!", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun dismissSyncNotification() {
+        _syncNotification.value = null
     }
 
     fun resetAllDataToZero(context: Context) {
@@ -823,19 +832,21 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     fun activateProLicense(key: String, context: Context, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val currentProfile = workshopProfile.value ?: WorkshopProfile()
-            val (isValid, message) = FeatureGate.verifyLicenseKey(key, currentProfile.email)
-            if (isValid) {
+            val deviceId = FeatureGate.getDeviceId(context)
+            val validation = FeatureGate.verifyLicenseKey(key, deviceId)
+            if (validation.isValid) {
+                val validUntil = if (validation.isLifetime) 0L else System.currentTimeMillis() + (validation.durationDays * FeatureGate.ONE_DAY_MS)
                 val updatedProfile = currentProfile.copy(
                     subscriptionTier = SubscriptionTier.PRO,
                     licenseKey = key.trim().uppercase(),
-                    validUntilEpoch = 0L
+                    validUntilEpoch = validUntil
                 )
                 repository.updateWorkshopProfile(updatedProfile)
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                onResult(true, message)
+                Toast.makeText(context, validation.message, Toast.LENGTH_LONG).show()
+                onResult(true, validation.message)
             } else {
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                onResult(false, message)
+                Toast.makeText(context, validation.message, Toast.LENGTH_SHORT).show()
+                onResult(false, validation.message)
             }
         }
     }

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +67,7 @@ import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
 import com.example.ui.components.ProFeatureBadge
 import com.example.ui.components.ProLockIcon
-import com.example.ui.components.ProUpgradeDialog
+import com.example.ui.components.ProTrialPackagesDialog
 import com.example.ui.components.TrialStatusBanner
 import com.example.util.FeatureGate
 
@@ -77,6 +79,7 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
     val workshopProfile by viewModel.workshopProfile.collectAsStateWithLifecycle()
     val role by viewModel.activeUserRole.collectAsStateWithLifecycle()
     val isPro by viewModel.isProUser.collectAsStateWithLifecycle()
+    val syncNotification by viewModel.syncNotification.collectAsStateWithLifecycle()
 
     val selesaiCount = completedServices.size
     val serviceCount = activeServices.size
@@ -89,10 +92,15 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
         FeatureGate.hasProAccess(context, workshopProfile)
     }
 
-    var showSyncConfirmDialog by remember { mutableStateOf(false) }
     var showProDialog by remember { mutableStateOf(false) }
-    var proDialogFeatureName by remember { mutableStateOf("Fitur Bengkel Qu PRO") }
-    var proDialogReason by remember { mutableStateOf("Fitur ini membutuhkan lisensi PRO.") }
+
+    // Auto-popup 10-day trial on first install / launch
+    LaunchedEffect(Unit) {
+        if (!isPro && FeatureGate.shouldAutoShowTrialPopup(context)) {
+            showProDialog = true
+            FeatureGate.markTrialPopupShown(context)
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -138,8 +146,6 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                                 trialStatus = trialStatus,
                                 onClick = {
                                     if (!isPro) {
-                                        proDialogFeatureName = "LISENSI BENGKEL QU PRO"
-                                        proDialogReason = "Dapatkan akses penuh seumur hidup dengan mengaktifkan Serial Number resmi."
                                         showProDialog = true
                                     }
                                 }
@@ -148,6 +154,19 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { viewModel.syncMasterData(context) },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "Sinkronkan Master Data",
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = { viewModel.logout() },
                             modifier = Modifier
@@ -168,8 +187,6 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
             TrialStatusBanner(
                 trialStatus = trialStatus,
                 onActivateClick = {
-                    proDialogFeatureName = "AKTIVASI SERIAL NUMBER PRO"
-                    proDialogReason = "Masa trial 10 hari telah berakhir. Aktifkan Serial Number untuk membuka kembali seluruh fitur PRO."
                     showProDialog = true
                 }
             )
@@ -263,149 +280,86 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // SYNC MASTER DATA BUTTON (Requested: "Dashboard - sinc master")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .clickable { showSyncConfirmDialog = true },
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2F1)),
-                border = BorderStroke(1.dp, Color(0xFF80CBC4))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF00897B)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "SINC MASTER DATA",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF004D40)
-                            )
-                            Text(
-                                text = "Sinkronkan katalog master sparepart & harga servis",
-                                fontSize = 11.sp,
-                                color = Color(0xFF00695C)
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { showSyncConfirmDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text("SINC", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // MAIN MENU BUTTONS (matching the diagram vertical menu stack)
+            // MAIN MENU BUTTONS - Urutan Baru: Service & Antrian, Kasir & Barcode, Sparepart & Stok, Marketing, Omset, Report, Pengaturan
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // 1. Service & Antrian
                 DashboardMenuButton(
-                    title = "KASIR",
-                    subtitle = "Antrian Servis, Nota Billing, Setoran & Pengeluaran",
-                    icon = Icons.Default.PointOfSale,
+                    title = "Service & Antrian",
+                    subtitle = "Antrian Kendaraan Masuk & Status Pengerjaan Servis",
+                    icon = Icons.Default.Engineering,
+                    hasProBadge = false,
                     isLocked = false,
                     onClick = { viewModel.navigateTo(BengkelScreen.SERVICE_QUEUE) }
                 )
 
+                // 2. Kasir & Barcode
                 DashboardMenuButton(
-                    title = "STOK",
-                    subtitle = "Inventaris Sparepart, Ekspor Excel & Laporan",
+                    title = "Kasir & Barcode",
+                    subtitle = "Billing Pembayaran, Scan Barcode, Setoran & Pengeluaran",
+                    icon = Icons.Default.PointOfSale,
+                    hasProBadge = false,
+                    isLocked = false,
+                    onClick = { viewModel.navigateTo(BengkelScreen.SERVICE_QUEUE) }
+                )
+
+                // 3. Sparepart & Stok
+                DashboardMenuButton(
+                    title = "Sparepart & Stok",
+                    subtitle = "Katalog Suku Cadang, Stok Minimum & Ekspor Excel",
                     icon = Icons.Default.Inventory,
+                    hasProBadge = false,
                     isLocked = false,
                     onClick = { viewModel.navigateTo(BengkelScreen.STOK) }
                 )
 
+                // 4. Marketing (PRO)
                 DashboardMenuButton(
-                    title = "ABSEN",
-                    subtitle = "Presensi Staff & Mekanik, Rekap Bulanan Excel",
-                    icon = Icons.Default.People,
-                    isLocked = false,
-                    onClick = { viewModel.navigateTo(BengkelScreen.ABSEN) }
-                )
-
-                // OMSET (Khusus PRO - locked if trial expired & not pro)
-                DashboardMenuButton(
-                    title = "OMSET",
-                    subtitle = "Laporan Keuangan & Omset (Khusus PRO)",
-                    icon = Icons.Default.MonetizationOn,
-                    isLocked = !hasProAccess,
-                    onLockedClick = {
-                        proDialogFeatureName = "LAPORAN OMSET BENGKEL"
-                        proDialogReason = "Fitur Laporan Omset Keuangan adalah fitur eksklusif Bengkel Qu PRO. Masukkan Serial Number untuk membuka akses."
-                        showProDialog = true
-                    },
-                    onClick = { viewModel.navigateTo(BengkelScreen.OMSET) }
-                )
-
-                DashboardMenuButton(
-                    title = "REPORT",
-                    subtitle = "Persetujuan Reject, Barang Datang, Belanja & Export",
-                    icon = Icons.Default.Assessment,
-                    isLocked = false,
-                    onClick = { viewModel.navigateTo(BengkelScreen.REPORT) }
-                )
-
-                // MARKETING (Khusus PRO - locked if trial expired & not pro)
-                DashboardMenuButton(
-                    title = "MARKETING",
-                    subtitle = "Ranking 20 Loyal Customer & WA Blast Servis 1 Bulan (Khusus PRO)",
+                    title = "Marketing",
+                    subtitle = "Ranking 20 Loyal Customer & Reminder Servis WA",
                     icon = Icons.Default.Campaign,
+                    hasProBadge = true,
                     isLocked = !hasProAccess,
-                    onLockedClick = {
-                        proDialogFeatureName = "MARKETING ENGINE PRO"
-                        proDialogReason = "Ranking 20 Loyal Customer dan Broadcast Pengingat Servis WA Blast adalah fitur eksklusif Bengkel Qu PRO. Masukkan Serial Number untuk membuka."
-                        showProDialog = true
-                    },
+                    onLockedClick = { showProDialog = true },
                     onClick = { viewModel.navigateTo(BengkelScreen.MARKETING) }
                 )
 
-                // PENGATURAN (Khusus PRO - locked if trial expired & not pro)
+                // 5. Omset (PRO)
                 DashboardMenuButton(
-                    title = "PENGATURAN",
-                    subtitle = "Manajemen Staff Auto Absen & Reset Database (Khusus PRO)",
-                    icon = Icons.Default.Settings,
+                    title = "Omset",
+                    subtitle = "Laporan Omset Keuangan & Laba Bersih Bengkel",
+                    icon = Icons.Default.MonetizationOn,
+                    hasProBadge = true,
                     isLocked = !hasProAccess,
-                    onLockedClick = {
-                        proDialogFeatureName = "PENGATURAN BENGKEL PRO"
-                        proDialogReason = "Manajemen Staff Auto Absen dan fitur Reset Total adalah fitur eksklusif Bengkel Qu PRO. Masukkan Serial Number untuk membuka."
-                        showProDialog = true
-                    },
+                    onLockedClick = { showProDialog = true },
+                    onClick = { viewModel.navigateTo(BengkelScreen.OMSET) }
+                )
+
+                // 6. Report (PRO)
+                DashboardMenuButton(
+                    title = "Report",
+                    subtitle = "Persetujuan Reject, Barang Datang & Belanja Toko",
+                    icon = Icons.Default.Assessment,
+                    hasProBadge = true,
+                    isLocked = !hasProAccess,
+                    onLockedClick = { showProDialog = true },
+                    onClick = { viewModel.navigateTo(BengkelScreen.REPORT) }
+                )
+
+                // 7. Pengaturan (PRO)
+                DashboardMenuButton(
+                    title = "Pengaturan",
+                    subtitle = "Profil Bengkel, Manajemen Staff & Backup Restore",
+                    icon = Icons.Default.Settings,
+                    hasProBadge = true,
+                    isLocked = !hasProAccess,
+                    onLockedClick = { showProDialog = true },
                     onClick = { viewModel.navigateTo(BengkelScreen.PENGATURAN) }
                 )
             }
@@ -414,43 +368,58 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
         }
     }
 
-    // Dialog Konfirmasi Sinc Master
-    if (showSyncConfirmDialog) {
+    // Notifikasi Pop-up Kecil Ketika Sinkronisasi Master Selesai
+    if (syncNotification != null) {
         AlertDialog(
-            onDismissRequest = { showSyncConfirmDialog = false },
-            icon = { Icon(Icons.Default.Sync, contentDescription = null, tint = Color(0xFF00897B)) },
-            title = { Text("Sinkronisasi Master Data", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { viewModel.dismissSyncNotification() },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE8F5E9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF2E7D32),
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "SINKRONISASI SELESAI",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color(0xFF1B5E20)
+                )
+            },
             text = {
                 Text(
-                    "Apakah Anda yakin ingin menyinkronkan data master katalog sparepart dan template servis? " +
-                    "Katalog master akan diperbarui dengan item standar Bengkel Qu.",
-                    fontSize = 13.sp
+                    text = syncNotification ?: "",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        showSyncConfirmDialog = false
-                        viewModel.syncMasterData(context)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                    onClick = { viewModel.dismissSyncNotification() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("YA, SINKRONKAN")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSyncConfirmDialog = false }) {
-                    Text("BATAL")
+                    Text("OK, MENGERTI")
                 }
             }
         )
     }
 
-    // Dialog Aktivasi Serial Number PRO
+    // Dialog Aktivasi Serial Number & Paket PRO (Rp1.000/hari, 1 Bulan, 3 Bulan, 6 Bulan, 12 Bulan)
     if (showProDialog) {
-        ProUpgradeDialog(
-            featureTitle = proDialogFeatureName,
-            reasonText = proDialogReason,
+        ProTrialPackagesDialog(
+            trialStatus = trialStatus,
+            workshopName = workshopProfile?.workshopName ?: "BENGKEL QU",
             onDismiss = { showProDialog = false },
             onActivateKey = { key ->
                 viewModel.activateProLicense(key, context) { success, _ ->
@@ -468,6 +437,7 @@ fun DashboardMenuButton(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    hasProBadge: Boolean = false,
     isLocked: Boolean = false,
     onLockedClick: (() -> Unit)? = null,
     onClick: () -> Unit
@@ -522,9 +492,31 @@ fun DashboardMenuButton(
                         fontSize = 16.sp,
                         color = if (isLocked) Color(0xFFC62828) else MaterialTheme.colorScheme.onSurface
                     )
-                    if (isLocked) {
+                    if (hasProBadge) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        ProLockIcon(isLocked = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (isLocked) Color(0xFFFFCDD2) else Color(0xFFFFD54F))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.WorkspacePremium,
+                                    contentDescription = null,
+                                    tint = if (isLocked) Color(0xFFB71C1C) else Color(0xFFE65100),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = "PRO",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isLocked) Color(0xFFB71C1C) else Color(0xFFE65100)
+                                )
+                            }
+                        }
                     }
                 }
                 Text(
