@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -35,6 +39,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -56,12 +61,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.CustomerService
+import com.example.data.local.ServiceItemDetail
 import com.example.data.local.ServiceStatus
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
-import com.example.ui.components.ProFeatureBadge
-import com.example.ui.components.ProUpgradeDialog
 import com.example.util.FeatureGate
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ServiceKasirScreen(viewModel: BengkelViewModel) {
@@ -69,6 +76,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
     val isPro by viewModel.isProUser.collectAsStateWithLifecycle()
     val activeServices by viewModel.activeServices.collectAsStateWithLifecycle()
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
+    val workshopProfile by viewModel.workshopProfile.collectAsStateWithLifecycle()
     var showNewCustomerDialog by remember { mutableStateOf(false) }
 
     var customerDateFilter by remember { mutableStateOf("Semua Data") }
@@ -104,11 +112,6 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
             else -> allServices
         }
     }
-
-    // Pro Dialog States
-    var showProUpgradeDialog by remember { mutableStateOf(false) }
-    var proGateTitle by remember { mutableStateOf("") }
-    var proGateReason by remember { mutableStateOf("") }
 
     val totalTodayServices = activeServices.size + completedServices.size
 
@@ -152,135 +155,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                 }
             }
 
-            // Sub-modules shortcut row (Setoran & Pengeluaran as in diagram)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.navigateTo(BengkelScreen.SETORAN) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF388E3C),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("SETORAN", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Button(
-                    onClick = { viewModel.navigateTo(BengkelScreen.PENGELUARAN) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFD84315),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("PENGELUARAN", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // EKSPOR DETAIL CUSTOMER (EXCEL & WA FORMAT) DENGAN FILTER TANGGAL
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "DETAIL CUSTOMER ($customerDateFilter)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "${filteredCustomerServices.size} Pelanggan",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.DarkGray
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(customerFilterOptions) { opt ->
-                            FilterChip(
-                                selected = customerDateFilter == opt,
-                                onClick = { customerDateFilter = opt },
-                                label = { Text(opt, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    selectedLabelColor = Color.White
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                viewModel.exportCustomerDetailExcel(
-                                    context = context,
-                                    filterLabel = customerDateFilter,
-                                    list = filteredCustomerServices,
-                                    sendViaWhatsApp = false
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("SIMPAN EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.exportCustomerDetailExcel(
-                                    context = context,
-                                    filterLabel = customerDateFilter,
-                                    list = filteredCustomerServices,
-                                    sendViaWhatsApp = true
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("SEND WA EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(10.dp))
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -356,8 +231,11 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
         var plate by remember { mutableStateOf("") }
         var notes by remember { mutableStateOf("") }
         var sendWhatsApp by remember { mutableStateOf(true) }
+        var printMechanicSpk by remember { mutableStateOf(true) }
+        var showSpkPreviewDialog by remember { mutableStateOf(false) }
+        var savedCustomerForSpk by remember { mutableStateOf<CustomerService?>(null) }
 
-        val nextQueue = (activeServices.maxOfOrNull { it.queueNumber } ?: 18) + 1
+        val nextQueue = (activeServices.maxOfOrNull { it.queueNumber } ?: 0) + 1
 
         AlertDialog(
             onDismissRequest = { showNewCustomerDialog = false },
@@ -393,7 +271,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("NAMA") },
+                        label = { Text("NAMA PELANGGAN") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -403,7 +281,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     OutlinedTextField(
                         value = phone,
                         onValueChange = { phone = it },
-                        label = { Text("NO HP") },
+                        label = { Text("NO WHATSAPP PELANGGAN") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -413,7 +291,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     OutlinedTextField(
                         value = plate,
                         onValueChange = { plate = it },
-                        label = { Text("PLAT NOMOR (misal: D 1234 BQ)") },
+                        label = { Text("PLAT NOMOR MOTOR") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -423,7 +301,7 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                     OutlinedTextField(
                         value = notes,
                         onValueChange = { notes = it },
-                        label = { Text("KETERANGAN / KELUHAN") },
+                        label = { Text("KELUHAN / INSTRUKSI SERVIS") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -434,13 +312,33 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                         modifier = Modifier.clickable { sendWhatsApp = !sendWhatsApp }
                     ) {
                         Checkbox(checked = sendWhatsApp, onCheckedChange = { sendWhatsApp = it })
-                        Text(text = "KIRIM WA NOTIFIKASI", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = "SEND WA CUSTOMER (TIKET ANTRIAN)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { printMechanicSpk = !printMechanicSpk }
+                    ) {
+                        Checkbox(checked = printMechanicSpk, onCheckedChange = { printMechanicSpk = it })
+                        Text(text = "PRINT BUAT MEKANIK (SPK KERJA)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
+                        val created = CustomerService(
+                            queueNumber = nextQueue,
+                            customerName = name.ifBlank { "Pelanggan #$nextQueue" },
+                            phoneNumber = phone,
+                            plateNumber = plate,
+                            notes = notes,
+                            mechanicName = "MEKANIK",
+                            status = ServiceStatus.ANTRIAN,
+                            items = listOf(ServiceItemDetail(name = "Jasa Pengecekan / Servis", price = 35000L, isPart = false)),
+                            totalAmount = 35000L
+                        )
+
                         viewModel.addNewCustomer(
                             name = name,
                             phone = phone,
@@ -449,7 +347,13 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                             context = context,
                             sendWhatsApp = sendWhatsApp
                         )
+
                         showNewCustomerDialog = false
+
+                        if (printMechanicSpk) {
+                            savedCustomerForSpk = created
+                            showSpkPreviewDialog = true
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
@@ -462,22 +366,91 @@ fun ServiceKasirScreen(viewModel: BengkelViewModel) {
                 }
             }
         )
-    }
 
-    if (showProUpgradeDialog) {
-        ProUpgradeDialog(
-            featureTitle = proGateTitle,
-            reasonText = proGateReason,
-            onDismiss = { showProUpgradeDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
-                    if (success) {
-                        showProUpgradeDialog = false
+        // DIALOG CETAK SPK BUAT MEKANIK
+        if (showSpkPreviewDialog && savedCustomerForSpk != null) {
+            val spk = savedCustomerForSpk!!
+            val profile = workshopProfile
+            val timeNow = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+
+            AlertDialog(
+                onDismissRequest = { showSpkPreviewDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Print, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("SPK KERJA MEKANIK", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFFDE7), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFFFFD54F), RoundedCornerShape(8.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(text = "SURAT PERINTAH KERJA (SPK)", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = Color(0xFFE65100))
+                        Text(text = "Bengkel: ${profile?.workshopName?.ifBlank { "Bengkel Saya" } ?: "Bengkel Saya"}", fontSize = 11.sp, color = Color.DarkGray)
+                        Text(text = "Waktu Masuk: $timeNow", fontSize = 10.sp, color = Color.Gray)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                        Text(text = "NO. ANTRIAN: #${spk.queueNumber}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color.Red)
+                        Text(text = "Nama Pelanggan : ${spk.customerName}", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text(text = "No. HP Pelanggan: ${spk.phoneNumber.ifBlank { "-" }}", fontSize = 12.sp)
+                        Text(text = "Plat Nomor     : ${spk.plateNumber.ifBlank { "-" }}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(text = "Keluhan/Kendala: ${spk.notes.ifBlank { "Pengecekan umum" }}", fontSize = 12.sp)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                        Text(text = "Tanda Tangan Mekanik: ______________", fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            try {
+                                val printText = """
+                                    ================================
+                                    SPK KERJA MEKANIK
+                                    ${profile?.workshopName?.ifBlank { "Bengkel Saya" } ?: "Bengkel Saya"}
+                                    Waktu: $timeNow
+                                    --------------------------------
+                                    NO. ANTRIAN : #${spk.queueNumber}
+                                    PELANGGAN   : ${spk.customerName}
+                                    NO. HP      : ${spk.phoneNumber}
+                                    PLAT MOTOR  : ${spk.plateNumber}
+                                    KELUHAN     : ${spk.notes}
+                                    --------------------------------
+                                    Instruksi: Cek kondisi & pastikan
+                                    part diambil dari stok resmi.
+                                    ================================
+                                """.trimIndent()
+
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, printText)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Cetak / Bagikan SPK Mekanik"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Mencetak SPK Mekanik...", Toast.LENGTH_SHORT).show()
+                            }
+                            showSpkPreviewDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("CETAK SPK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSpkPreviewDialog = false }) {
+                        Text("TUTUP")
                     }
                 }
-            }
-        )
+            )
+        }
     }
+
+
 }
 
 @Composable

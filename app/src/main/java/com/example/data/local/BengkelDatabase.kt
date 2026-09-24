@@ -58,177 +58,174 @@ abstract class BengkelDatabase : RoomDatabase() {
                 super.onCreate(db)
                 INSTANCE?.let { database ->
                     scope.launch(Dispatchers.IO) {
-                        populateInitialData(database.bengkelDao())
+                        populateCleanUserBase(database.bengkelDao())
+                        populateMasterKatalog(database.bengkelDao())
+                        populateInitialSampleServices(database.bengkelDao())
                     }
                 }
             }
         }
 
-        suspend fun populateInitialData(dao: BengkelDao) {
-            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-
-            // Seed Workshop Profile
+        suspend fun populateCleanUserBase(dao: BengkelDao) {
+            // Profil Bengkel Baru yang Bersih (Murni dari Nol)
             dao.insertOrUpdateProfile(
                 WorkshopProfile(
                     id = 1,
-                    workshopName = "BENGKEL QU",
+                    workshopName = "Bengkel Qu",
                     ownerName = "Hendri",
                     email = "bageurhendri@gmail.com",
-                    phone = "085714216556",
-                    address = "Jl. Otomotif No. 88, Bandung"
+                    phone = "081234567890",
+                    address = "Jl. Raya Otomotif No. 88",
+                    subscriptionTier = SubscriptionTier.REGULAR
                 )
             )
 
-            // Seed Staff
+            // Staff Awal Bersih
             val staff = listOf(
-                StaffMember(name = "Hendri", role = "ADMIN", phone = "085714216556"),
-                StaffMember(name = "Pray", role = "KASIR", phone = "081299887766"),
-                StaffMember(name = "Day", role = "MEKANIK", phone = "081277665544"),
-                StaffMember(name = "Bul", role = "MEKANIK", phone = "081255443322"),
-                StaffMember(name = "Man", role = "MEKANIK", phone = "081244332211"),
-                StaffMember(name = "Yuli", role = "MEKANIK", phone = "081233221100")
+                StaffMember(name = "ADMIN", role = "ADMIN", phone = "081234567890"),
+                StaffMember(name = "KASIR", role = "KASIR", phone = "081234567891"),
+                StaffMember(name = "MEKANIK DAY", role = "MEKANIK", phone = "081234567892")
             )
             dao.insertAllStaff(staff)
+        }
 
-            // Seed Attendance (matching diagram: PRAY MASUK, DAY MASUK, BUL IZIN, MAN SAKIT, YULI MASUK)
-            val attendances = listOf(
-                AttendanceRecord(staffName = "PRAY", dateString = todayStr, status = AttendanceStatus.MASUK, timeCheckIn = "07:45"),
-                AttendanceRecord(staffName = "DAY", dateString = todayStr, status = AttendanceStatus.MASUK, timeCheckIn = "07:50"),
-                AttendanceRecord(staffName = "BUL", dateString = todayStr, status = AttendanceStatus.IZIN, timeCheckIn = "-", notes = "Urusan keluarga"),
-                AttendanceRecord(staffName = "MAN", dateString = todayStr, status = AttendanceStatus.SAKIT, timeCheckIn = "-", notes = "Flu demam"),
-                AttendanceRecord(staffName = "YULI", dateString = todayStr, status = AttendanceStatus.MASUK, timeCheckIn = "08:00")
-            )
-            dao.insertAllAttendance(attendances)
-
-            // Seed Completed Services (15 completed to match diagram "selesai: 15")
-            val completedList = mutableListOf<CustomerService>()
-            for (i in 1..15) {
-                completedList.add(
-                    CustomerService(
-                        queueNumber = i,
-                        customerName = "Pelanggan $i",
-                        phoneNumber = "081234500$i",
-                        plateNumber = "D ${1000 + i * 37} BQ",
-                        notes = "Servis rutin dan ganti oli",
-                        mechanicName = if (i % 2 == 0) "DAY" else "YULI",
-                        status = ServiceStatus.DIBAYAR,
-                        discount = 0L,
-                        items = listOf(
-                            ServiceItemDetail(id = "p_$i", name = "Oli Mesin Matic", price = 65000L, isPart = true),
-                            ServiceItemDetail(id = "s_$i", name = "Service Rutin", price = 35000L, isPart = false)
-                        ),
-                        totalAmount = 100000L,
-                        dateEpoch = System.currentTimeMillis() - (15 - i) * 1800000L
-                    )
+        suspend fun populateMasterKatalog(dao: BengkelDao) {
+            val existing = dao.getAllStockItemsList()
+            if (existing.isEmpty()) {
+                val masterParts = listOf(
+                    StockItem(name = "OLI AHM MPX 2 0.8L (MATIC)", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 45000L, sellPrice = 55000L, qty = 15, barcode = "8991001001"),
+                    StockItem(name = "OLI YAMALUBE MATIC 0.8L", brand = "YAMAHA", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 44000L, sellPrice = 54000L, qty = 12, barcode = "8991001002"),
+                    StockItem(name = "OLI SHELL ADVANCE AX7 0.8L", brand = "SHELL", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 52000L, sellPrice = 65000L, qty = 8, barcode = "8991001003"),
+                    StockItem(name = "OLI GARDAN / GEAR MATIC 120ML", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 12000L, sellPrice = 18000L, qty = 20, barcode = "8991001004"),
+                    StockItem(name = "KAMPAS REM DEPAN BEAT / VARIO", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 38000L, sellPrice = 50000L, qty = 10, barcode = "8991001005"),
+                    StockItem(name = "KAMPAS REM BELAKANG TROMOL", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 35000L, sellPrice = 45000L, qty = 2, barcode = "8991001006"),
+                    StockItem(name = "BUSI NGK CPR9EA-9", brand = "NGK", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 18000L, sellPrice = 25000L, qty = 18, barcode = "8991001007"),
+                    StockItem(name = "ROLLER SET STANDAR BEAT FI", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 42000L, sellPrice = 55000L, qty = 3, barcode = "8991001008"),
+                    StockItem(name = "VANBELT SET BEAT FI", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 110000L, sellPrice = 145000L, qty = 4, barcode = "8991001009"),
+                    StockItem(name = "FILTER UDARA BEAT ESP", brand = "AHM", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 38000L, sellPrice = 48000L, qty = 5, barcode = "8991001010"),
+                    StockItem(name = "BAN LUAR FDR 80/90-14 TUBELESS", brand = "FDR", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 160000L, sellPrice = 200000L, qty = 4, barcode = "8991001011"),
+                    StockItem(name = "AKI KERING GS ASTRA GTZ-5S", brand = "GS ASTRA", quality = "ORIGINAL", status = StockStatus.JUAL_PUTUS, modalPrice = 190000L, sellPrice = 240000L, qty = 2, barcode = "8991001012")
                 )
+                dao.insertAllStockItems(masterParts)
             }
-            completedList.forEach { dao.insertCustomerService(it) }
+        }
 
-            // Seed Active Services (Queue 16, 17, 18 matching diagram!)
-            // 16. Budi (matching diagram details exactly!)
-            dao.insertCustomerService(
+        suspend fun populateInitialSampleServices(dao: BengkelDao) {
+            val now = System.currentTimeMillis()
+            val sampleServices = listOf(
                 CustomerService(
-                    queueNumber = 16,
-                    customerName = "Budi",
-                    phoneNumber = "081387654321",
-                    plateNumber = "D 2416 BQ",
-                    notes = "Ket chek cvt bulan Oktober",
-                    mechanicName = "DAY",
+                    queueNumber = 1,
+                    customerName = "Budi Santoso",
+                    phoneNumber = "081234567890",
+                    plateNumber = "B 3456 TGY",
+                    notes = "Ganti oli dan servis rutin",
+                    mechanicName = "MEKANIK DAY",
                     status = ServiceStatus.PROSES,
-                    discount = 0L,
                     items = listOf(
-                        ServiceItemDetail(id = "item_1", name = "oli shel", price = 65000L, isPart = true),
-                        ServiceItemDetail(id = "item_2", name = "kanvas", price = 20000L, isPart = true),
-                        ServiceItemDetail(id = "item_3", name = "service ringan", price = 35000L, isPart = false)
+                        ServiceItemDetail(id = "s_1", name = "Service Rutin Ringan", price = 35000L, isPart = false),
+                        ServiceItemDetail(id = "s_2", name = "OLI AHM MPX 2 0.8L (MATIC)", price = 55000L, isPart = true)
                     ),
-                    totalAmount = 120000L
-                )
-            )
-
-            // 17. Bambang
-            dao.insertCustomerService(
+                    totalAmount = 90000L,
+                    dateEpoch = now - 1800000L // 30 menit lalu
+                ),
                 CustomerService(
-                    queueNumber = 17,
-                    customerName = "Bambang",
-                    phoneNumber = "081298761234",
-                    plateNumber = "B 5817 KQU",
-                    notes = "Ganti vanbelt dan roller cvt",
-                    mechanicName = "YULI",
+                    queueNumber = 2,
+                    customerName = "Agus Pratama",
+                    phoneNumber = "081298765432",
+                    plateNumber = "D 4512 ABC",
+                    notes = "Rem belakang bunyi decit",
+                    mechanicName = "MEKANIK DAY",
                     status = ServiceStatus.ANTRIAN,
-                    discount = 0L,
                     items = listOf(
-                        ServiceItemDetail(id = "item_4", name = "vanbelt matic", price = 110000L, isPart = true),
-                        ServiceItemDetail(id = "item_5", name = "service cvt", price = 40000L, isPart = false)
+                        ServiceItemDetail(id = "s_3", name = "Pemeriksaan Rem Belakang", price = 25000L, isPart = false)
                     ),
-                    totalAmount = 150000L
-                )
-            )
-
-            // 18. Amin
-            dao.insertCustomerService(
+                    totalAmount = 25000L,
+                    dateEpoch = now - 900000L // 15 menit lalu
+                ),
                 CustomerService(
-                    queueNumber = 18,
-                    customerName = "Amin",
-                    phoneNumber = "085712345678",
-                    plateNumber = "D 4118 AA",
-                    notes = "Tune up injeksi & ganti busi",
-                    mechanicName = "PRAY",
-                    status = ServiceStatus.ANTRIAN,
+                    queueNumber = 3,
+                    customerName = "Rina Wijaya",
+                    phoneNumber = "081311223344",
+                    plateNumber = "B 6789 KLS",
+                    notes = "Servis CVT & ganti kampas rem - Siap Kasir",
+                    mechanicName = "MEKANIK DAY",
+                    status = ServiceStatus.SELESAI,
+                    items = listOf(
+                        ServiceItemDetail(id = "s_4", name = "Service CVT Lengkap", price = 50000L, isPart = false),
+                        ServiceItemDetail(id = "s_5", name = "KAMPAS REM DEPAN BEAT / VARIO", price = 50000L, isPart = true)
+                    ),
+                    totalAmount = 100000L,
+                    dateEpoch = now - 600000L // 10 menit lalu
+                ),
+                CustomerService(
+                    queueNumber = 4,
+                    customerName = "Doni Kusuma",
+                    phoneNumber = "081755667788",
+                    plateNumber = "F 1234 XY",
+                    notes = "Ganti aki baru",
+                    mechanicName = "MEKANIK DAY",
+                    status = ServiceStatus.DIBAYAR,
+                    paymentMethod = "CASH",
+                    items = listOf(
+                        ServiceItemDetail(id = "s_6", name = "Jasa Pasang Aki", price = 10000L, isPart = false),
+                        ServiceItemDetail(id = "s_7", name = "AKI KERING GS ASTRA GTZ-5S", price = 240000L, isPart = true)
+                    ),
+                    totalAmount = 250000L,
+                    dateEpoch = now - 3600000L // 1 jam lalu
+                )
+            )
+
+            for (service in sampleServices) {
+                dao.insertCustomerService(service)
+            }
+        }
+
+        /**
+         * 10 Data Uji Simulasi Pelanggan untuk uji coba Marketing WA Blast.
+         * Nomor telepon menggunakan format simulasi aman (0812-0000-0001 s/d 0812-0000-0010)
+         * dan nama berlabel [SIMULASI] sehingga sistem tidak akan meluncurkan WhatsApp asli.
+         */
+        suspend fun load10SimulationData(dao: BengkelDao) {
+            val names = listOf(
+                "Budi Santoso", "Agus Setiawan", "Rian Hidayat", "Denny Pratama", "Eko Prasetyo",
+                "Fajar Ramadhan", "Gilang Ramadhan", "Hadi Wijaya", "Indra Gunawan", "Joko Susilo"
+            )
+            val parts = listOf(
+                "Oli Shell AX7 & Service Ringan", "Kampas Rem Depan", "Ganti Busi & Filter Udara",
+                "Service CVT & Vanbelt", "Oli MPX2 & Gear Oil", "Ganti Ban Luar Belakang",
+                "Tune Up Injeksi & Busi", "Ganti Komstir & Oli Shock", "Aki Kering & Klakson", "Service Karburator & Oli Mesin"
+            )
+
+            val now = System.currentTimeMillis()
+            val oneDayMs = 24L * 60L * 60L * 1000L
+
+            for (i in 0 until 10) {
+                val serviceDaysAgo = 35 + (i * 7) // Antara 35 hingga 98 hari yang lalu (> 1 bulan untuk uji WA blast)
+                val serviceDate = now - (serviceDaysAgo * oneDayMs)
+                val qNum = 100 + i + 1
+
+                val service = CustomerService(
+                    queueNumber = qNum,
+                    customerName = "${names[i]} [SIMULASI]",
+                    phoneNumber = "08120000000${i + 1}",
+                    plateNumber = "D ${1100 + i * 23} SIM",
+                    notes = "Servis berkala: ${parts[i]}",
+                    mechanicName = if (i % 2 == 0) "MEKANIK 1" else "MEKANIK 2",
+                    status = ServiceStatus.DIBAYAR,
                     discount = 0L,
                     items = listOf(
-                        ServiceItemDetail(id = "item_6", name = "busi ngk", price = 25000L, isPart = true),
-                        ServiceItemDetail(id = "item_7", name = "tune up injeksi", price = 45000L, isPart = false)
+                        ServiceItemDetail(id = "sim_p_$i", name = parts[i], price = 75000L + (i * 15000L), isPart = true),
+                        ServiceItemDetail(id = "sim_s_$i", name = "Jasa Servis Berkala", price = 35000L, isPart = false)
                     ),
-                    totalAmount = 70000L
+                    totalAmount = 110000L + (i * 15000L),
+                    dateEpoch = serviceDate
                 )
-            )
+                dao.insertCustomerService(service)
+            }
+        }
 
-            // Seed Stock Items (Komstir, Klakson, Oli Shell, Kanvas, etc.)
-            val stockItems = listOf(
-                StockItem(name = "KOMSTIR", brand = "Aspira", quality = "Original", status = StockStatus.JUAL_PUTUS, modalPrice = 60000L, sellPrice = 85000L, qty = 12, barcode = "899275310012"),
-                StockItem(name = "KLAKSON", brand = "Denso", quality = "OEM", status = StockStatus.JUAL_PUTUS, modalPrice = 45000L, sellPrice = 65000L, qty = 6, barcode = "899275310029"),
-                StockItem(name = "OLI SHEL", brand = "Shell AX7", quality = "Original", status = StockStatus.JUAL_PUTUS, modalPrice = 50000L, sellPrice = 65000L, qty = 12, barcode = "899100210036"),
-                StockItem(name = "KANVAS REM", brand = "AHM", quality = "Original", status = StockStatus.JUAL_PUTUS, modalPrice = 14000L, sellPrice = 20000L, qty = 20, barcode = "899300410043"),
-                StockItem(name = "BUSI", brand = "NGK", quality = "Original", status = StockStatus.JUAL_PUTUS, modalPrice = 15000L, sellPrice = 25000L, qty = 25, barcode = "899400510050"),
-                StockItem(name = "VANBELT MATIC", brand = "Gates Power", quality = "Konsinyasi", status = StockStatus.KONSINYASI, modalPrice = 90000L, sellPrice = 120000L, qty = 10, barcode = "899500610067")
-            )
-            dao.insertAllStockItems(stockItems)
-
-            // Seed Incoming Stocks (Barang Datang: Komstir 12, Klakson 6, Oli Shel 12)
-            val incoming = listOf(
-                IncomingStock(itemName = "KOMSTIR", qty = 12, status = ApprovalStatus.PENDING),
-                IncomingStock(itemName = "KLAKSON", qty = 6, status = ApprovalStatus.PENDING),
-                IncomingStock(itemName = "OLI SHEL", qty = 12, status = ApprovalStatus.PENDING)
-            )
-            dao.insertAllIncomingStocks(incoming)
-
-            // Seed Reject Items (Pengajuan Barang Reject: Oli Bocor 1)
-            val rejects = listOf(
-                RejectItem(itemName = "OLI SHEL", reason = "BOCOR", qty = 1, status = ApprovalStatus.PENDING)
-            )
-            dao.insertAllRejectItems(rejects)
-
-            // Seed Expense Items (Belanja: Air Galon 30000, Bensin 20000, Total 50000)
-            val expenses = listOf(
-                ExpenseItem(name = "AIR GALON", amount = 30000L, status = ApprovalStatus.PENDING),
-                ExpenseItem(name = "BENSIN", amount = 20000L, status = ApprovalStatus.PENDING)
-            )
-            dao.insertAllExpenseItems(expenses)
-
-            // Seed Cash Deposit (Setoran: Total 2.000.000)
-            dao.insertCashDeposit(
-                CashDeposit(
-                    count100k = 15, // 1.500.000
-                    count50k = 8,   // 400.000
-                    count20k = 4,   // 80.000
-                    count10k = 1,   // 10.000
-                    count5k = 1,    // 5.000
-                    count2k = 2,    // 4.000
-                    count1k = 1,    // 1.000
-                    count500 = 0,
-                    totalAmount = 2000000L
-                )
-            )
+        suspend fun populateInitialData(dao: BengkelDao) {
+            populateCleanUserBase(dao)
         }
     }
 }

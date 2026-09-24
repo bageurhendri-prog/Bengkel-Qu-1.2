@@ -33,6 +33,7 @@ class BengkelRepository(private val dao: BengkelDao) {
 
     // Stocks
     val allStockItems: Flow<List<StockItem>> = dao.getAllStockItems()
+    suspend fun getAllStockItemsList(): List<StockItem> = dao.getAllStockItemsList()
     fun searchStockItems(query: String): Flow<List<StockItem>> = dao.searchStockItems(query)
     suspend fun insertStockItem(item: StockItem) = dao.insertStockItem(item)
     suspend fun updateStockItem(item: StockItem) = dao.updateStockItem(item)
@@ -101,9 +102,33 @@ class BengkelRepository(private val dao: BengkelDao) {
         dao.clearExpenseItems()
         dao.clearAttendanceRecords()
         dao.clearCashDeposits()
+        dao.clearStaffMembers()
+        dao.insertOrUpdateProfile(
+            WorkshopProfile(
+                id = 1,
+                workshopName = "Bengkel Saya",
+                ownerName = "",
+                email = "",
+                phone = "",
+                address = ""
+            )
+        )
+    }
+
+    suspend fun loadSimulationData() {
+        BengkelDatabase.load10SimulationData(dao)
+    }
+
+    suspend fun updateCashDepositApproval(id: Long, status: ApprovalStatus, approvedBy: String, approvedAt: Long) {
+        dao.updateCashDepositApproval(id, status, approvedBy, approvedAt)
+    }
+
+    suspend fun updateExpenseItemApproval(id: Long, status: ApprovalStatus, approvedAt: Long) {
+        dao.updateExpenseItemApproval(id, status, approvedAt)
     }
 
     suspend fun syncMasterData() {
-        BengkelDatabase.populateInitialData(dao)
+        BengkelDatabase.populateCleanUserBase(dao)
+        BengkelDatabase.populateMasterKatalog(dao)
     }
 }

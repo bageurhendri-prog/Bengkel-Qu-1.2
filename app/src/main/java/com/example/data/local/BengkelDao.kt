@@ -102,6 +102,9 @@ interface BengkelDao {
     @Query("UPDATE expense_items SET status = :status WHERE id = :id")
     suspend fun updateExpenseItemStatus(id: Long, status: ApprovalStatus)
 
+    @Query("UPDATE expense_items SET status = :status, approvedAtEpoch = :approvedAt WHERE id = :id")
+    suspend fun updateExpenseItemApproval(id: Long, status: ApprovalStatus, approvedAt: Long)
+
     // --- Attendance (Absen) ---
     @Query("SELECT * FROM attendance_records WHERE dateString = :dateString ORDER BY staffName ASC")
     fun getAttendanceByDate(dateString: String): Flow<List<AttendanceRecord>>
@@ -127,6 +130,9 @@ interface BengkelDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCashDeposit(deposit: CashDeposit): Long
+
+    @Query("UPDATE cash_deposits SET approvalStatus = :status, approvedBy = :approvedBy, approvedAtEpoch = :approvedAt WHERE id = :id")
+    suspend fun updateCashDepositApproval(id: Long, status: ApprovalStatus, approvedBy: String, approvedAt: Long)
 
     // --- Workshop Profile ---
     @Query("SELECT * FROM workshop_profile WHERE id = 1")

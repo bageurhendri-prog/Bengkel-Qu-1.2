@@ -381,7 +381,7 @@ object ReportExporter {
         }
         wa.appendLine("━━━━━━━━━━━━━━━━━━━")
         wa.appendLine("_File rekap Excel lengkap (No 1-50) terlampir._")
-        wa.appendLine("_Aplikasi Bengkel Qu PRO Marketing Engine_")
+        wa.appendLine("_Aplikasi Bengkel Qu Marketing Engine_")
 
         return Pair(csv.toString(), wa.toString())
     }
@@ -411,7 +411,7 @@ object ReportExporter {
         }
         wa.appendLine("━━━━━━━━━━━━━━━━━━━")
         wa.appendLine("_File Excel data lengkap terlampir._")
-        wa.appendLine("_Aplikasi Bengkel Qu PRO Marketing Engine_")
+        wa.appendLine("_Aplikasi Bengkel Qu Marketing Engine_")
 
         return Pair(csv.toString(), wa.toString())
     }

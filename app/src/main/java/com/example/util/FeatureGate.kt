@@ -4,15 +4,40 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.data.local.SubscriptionTier
 import com.example.data.local.WorkshopProfile
+import java.security.MessageDigest
 import kotlin.math.ceil
 
 /**
- * Feature Gate & Licensing Engine for Bengkel Qu.
- * Implements:
- * - Feature-based gating (Reguler vs PRO) with Lock Icon (🔒)
- * - 10-day PRO Trial with automatic start and urgent expiration warnings
- * - Device-bound Serial Number (SN) mechanism with plan durations (1, 3, 6, 12 months)
- * - Non-blocking principle: Basic cashiering, service queue, and local database remain 100% active and safe forever.
+ * =========================================================================
+ * SKEMA & TEKNIS GENERATE SERIAL NUMBER DEVELOPER (OFFLINE SECURE)
+ * =========================================================================
+ * 1. Dasar: Device-Bound Cryptographic Signature.
+ * 2. Parameter Input:
+ *    - Device ID (contoh: "BQ-A1B2-C3D4")
+ *    - Duration Code: "1D", "30D", "90D", "180D", "365D", atau "LIFE"
+ *    - Developer Secret Salt: "BENGKELQU_SECRET_SALT_2026"
+ * 3. Rumus Checksum Token:
+ *    raw = Clean(DeviceId) + "#" + DurationCode + "#" + SecretSalt
+ *    hash = SHA-256(raw)
+ *    checksum = 6 karakter hex pertama dari hash (uppercase)
+ * 4. Format Serial Number Resmi:
+ *    BQPRO-[DURATION]-[CLEAN_DEVICE_ID]-[CHECKSUM]
+ *    Contoh:
+ *    - Paket 1 Hari   : BQPRO-1D-A1B2C3D4-9F8E2A
+ *    - Paket 1 Bulan  : BQPRO-30D-A1B2C3D4-3B5C1D
+ *    - Paket 3 Bulan  : BQPRO-90D-A1B2C3D4-A7E29F
+ *    - Paket 6 Bulan  : BQPRO-180D-A1B2C3D4-8F123C
+ *    - Paket 12 Bulan : BQPRO-365D-A1B2C3D4-E4567A
+ *    - Lifetime       : BQPRO-LIFE-A1B2C3D4-D8812A
+ * 5. Script Python untuk Developer PC:
+ *    import hashlib
+ *    def gen_sn(dev_id, plan):
+ *        clean = dev_id.replace('-', '').replace('BQ', '').strip().upper()
+ *        salt = "BENGKELQU_SECRET_SALT_2026"
+ *        raw = f"{clean}#{plan}#{salt}".encode('utf-8')
+ *        sig = hashlib.sha256(raw).hexdigest()[:6].upper()
+ *        return f"BQPRO-{plan}-{clean}-{sig}"
+ * =========================================================================
  */
 object FeatureGate {
 
@@ -20,18 +45,17 @@ object FeatureGate {
     private const val KEY_TRIAL_START = "trial_start_epoch"
     private const val KEY_DEVICE_ID = "bengkel_device_id"
     private const val KEY_LAST_TRIAL_POPUP_DATE = "last_trial_popup_date"
-    private const val TRIAL_DURATION_DAYS = 10L
+    const val TRIAL_DURATION_DAYS = 10L
     const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
     private const val TOTAL_TRIAL_MS = TRIAL_DURATION_DAYS * ONE_DAY_MS
 
-    // Technical Support WhatsApp & Developer Contact
-    const val SUPPORT_WHATSAPP_NUMBER = "6285714216556"
-    const val DEVELOPER_PHONE_DISPLAY = "085714216556"
+    // Developer Contact - Official Email Only (Nomor WA disembunyikan/dihapus)
     const val DEVELOPER_EMAIL = "bageurhendri@gmail.com"
+    private const val DEVELOPER_SECRET_SALT = "BENGKELQU_SECRET_SALT_2026"
 
     data class ProPlan(
         val id: String,
-        val code: String, // 30D, 90D, 180D, 365D, LIFE
+        val code: String, // 1D, 30D, 90D, 180D, 365D, LIFE
         val title: String,
         val durationLabel: String,
         val priceText: String,
@@ -41,6 +65,16 @@ object FeatureGate {
     )
 
     val PRO_PLANS = listOf(
+        ProPlan(
+            id = "plan_1",
+            code = "1D",
+            title = "Paket 1 Hari",
+            durationLabel = "1 Hari",
+            priceText = "Rp 1.000",
+            days = 1L,
+            badge = "Rp 1.000/hari",
+            description = "Akses penuh fitur PRO selama 1 hari kalender."
+        ),
         ProPlan(
             id = "plan_30",
             code = "30D",
@@ -56,9 +90,9 @@ object FeatureGate {
             code = "90D",
             title = "Paket 3 Bulan",
             durationLabel = "90 Hari",
-            priceText = "Rp 85.000",
+            priceText = "Rp 80.000",
             days = 90L,
-            badge = "Hemat Rp 5.000",
+            badge = "Hemat Rp 10.000",
             description = "Pilihan ekonomis kuartalan untuk operasional bengkel."
         ),
         ProPlan(
@@ -66,9 +100,9 @@ object FeatureGate {
             code = "180D",
             title = "Paket 6 Bulan",
             durationLabel = "180 Hari",
-            priceText = "Rp 160.000",
+            priceText = "Rp 150.000",
             days = 180L,
-            badge = "Hemat Rp 20.000",
+            badge = "Hemat Rp 30.000",
             description = "Paket semesteran bebas pusing untuk jangka panjang."
         ),
         ProPlan(
@@ -76,9 +110,9 @@ object FeatureGate {
             code = "365D",
             title = "Paket 12 Bulan (1 Tahun)",
             durationLabel = "365 Hari",
-            priceText = "Rp 300.000",
+            priceText = "Rp 275.000",
             days = 365L,
-            badge = "⭐ Paling Hemat (~Rp 820/hari)",
+            badge = "⭐ Paling Hemat (~Rp 750/hari)",
             description = "Investasi terbaik tahunan untuk kelancaran bisnis bengkel."
         )
     )
@@ -94,6 +128,7 @@ object FeatureGate {
         data class Denied(val featureName: String, val reason: String) : GateResult()
     }
 
+    // Prinsip Non-Blocking: Fitur dasar tetap 100% aktif dan tanpa batasan
     fun canAddStaff(currentCount: Int, isPro: Boolean): GateResult = GateResult.Allowed
 
     fun canUseBarcodeScanner(isPro: Boolean): GateResult = GateResult.Allowed
@@ -118,7 +153,7 @@ object FeatureGate {
             } catch (e: Exception) {
                 "DEV"
             }
-            val raw = kotlin.math.abs((androidId + "_BENGKELQU_DEV_SALT_2026").hashCode()).toString(16).uppercase()
+            val raw = kotlin.math.abs((androidId + "_BENGKELQU_SALT").hashCode()).toString(16).uppercase()
             val padded = raw.padStart(8, '0').takeLast(8)
             devId = "BQ-${padded.substring(0, 4)}-${padded.substring(4, 8)}"
             prefs.edit().putString(KEY_DEVICE_ID, devId).apply()
@@ -128,16 +163,18 @@ object FeatureGate {
 
     /**
      * Generates deterministic checksum signature for device ID & duration plan code.
+     * Uses SHA-256 and takes first 6 uppercase hex characters.
      */
     fun generateExpectedSignature(deviceId: String, durationCode: String): String {
         val cleanDev = deviceId.replace("-", "").replace("BQ", "").trim().uppercase()
-        val seed = "DEV_BQ_SECRET_SALT_${cleanDev}_$durationCode"
-        val hash = kotlin.math.abs(seed.hashCode()).toString(16).uppercase().padStart(4, '0')
-        return hash.takeLast(4)
+        val rawInput = "$cleanDev#$durationCode#$DEVELOPER_SECRET_SALT"
+        val bytes = MessageDigest.getInstance("SHA-256").digest(rawInput.toByteArray(Charsets.UTF_8))
+        return bytes.take(3).joinToString("") { "%02X".format(it) }
     }
 
     /**
      * Generates an official device-bound serial number for a specific device and plan.
+     * Format: BQPRO-[DURATION]-[CLEAN_DEV_ID]-[CHECKSUM]
      */
     fun generateSerialNumber(deviceId: String, durationCode: String): String {
         val cleanDev = deviceId.replace("-", "").replace("BQ", "").trim().uppercase()
@@ -164,7 +201,7 @@ object FeatureGate {
         val cleanDev = deviceId.replace("-", "").replace("BQ", "").trim().uppercase()
         val normalized = trimmed.replace("-", "")
 
-        // 1. Device-bound verification for standard plans
+        // 1. Device-bound verification for standard plans (1D, 30D, 90D, 180D, 365D)
         for (plan in PRO_PLANS) {
             val sig = generateExpectedSignature(deviceId, plan.code)
             val expectedClean = ("BQPRO" + plan.code + cleanDev + sig).uppercase()
@@ -207,12 +244,13 @@ object FeatureGate {
 
         return LicenseValidationResult(
             false,
-            "Serial Number tidak valid atau terdaftar untuk perangkat lain. Silakan hubungi Developer via WhatsApp (085714216556)."
+            "Serial Number tidak valid untuk perangkat ini. Silakan ajukan aktivasi resmi ke Developer via Email ($DEVELOPER_EMAIL)."
         )
     }
 
     /**
      * Initializes or gets the trial start epoch.
+     * Trial 10 hari langsung aktif sejak aplikasi diinstall.
      */
     fun getTrialStartEpoch(context: Context): Long {
         val prefs = getPrefs(context)
@@ -225,69 +263,50 @@ object FeatureGate {
     }
 
     /**
-     * Checks if the automatic trial pop-up should be shown today.
-     */
-    fun shouldAutoShowTrialPopup(context: Context): Boolean {
-        val prefs = getPrefs(context)
-        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-        val lastShown = prefs.getString(KEY_LAST_TRIAL_POPUP_DATE, "")
-        return lastShown != today
-    }
-
-    /**
-     * Marks the trial pop-up as shown for today.
-     */
-    fun markTrialPopupShown(context: Context) {
-        val prefs = getPrefs(context)
-        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-        prefs.edit().putString(KEY_LAST_TRIAL_POPUP_DATE, today).apply()
-    }
-
-    /**
      * Evaluates current licensing & trial status.
+     * 1. PRO License in database active? -> ProActivated
+     * 2. Within 10 days of first install? -> TrialActive (with remaining days)
+     * 3. Else -> Expired (Fitur dasar tetap 100% aktif tanpa batasan)
      */
     fun getTrialStatus(context: Context, profile: WorkshopProfile?): TrialStatus {
-        if (profile?.subscriptionTier == SubscriptionTier.PRO) {
-            val validUntil = profile.validUntilEpoch
-            if (validUntil <= 0L) {
-                return TrialStatus.ProActivated(daysRemaining = null, isLifetime = true)
-            }
-            val now = System.currentTimeMillis()
-            val diff = validUntil - now
-            if (diff > 0) {
-                val days = ceil(diff.toDouble() / ONE_DAY_MS).toInt().coerceAtLeast(1)
-                return TrialStatus.ProActivated(daysRemaining = days, isLifetime = false)
-            } else {
-                return TrialStatus.Expired
-            }
-        }
-
-        val trialStart = getTrialStartEpoch(context)
         val now = System.currentTimeMillis()
-        val elapsed = now - trialStart
-        val remainingMs = TOTAL_TRIAL_MS - elapsed
-
-        if (remainingMs <= 0) {
-            return TrialStatus.Expired
+        if (profile?.subscriptionTier == SubscriptionTier.PRO) {
+            val isLifetime = profile.validUntilEpoch == 0L
+            val days = if (isLifetime) null else {
+                val diff = profile.validUntilEpoch - now
+                if (diff > 0) (diff / ONE_DAY_MS).toInt() + 1 else 0
+            }
+            if (isLifetime || (days != null && days > 0)) {
+                return TrialStatus.ProActivated(daysRemaining = days, isLifetime = isLifetime)
+            }
         }
 
-        val daysRemaining = ceil(remainingMs.toDouble() / ONE_DAY_MS).toInt().coerceIn(1, TRIAL_DURATION_DAYS.toInt())
-        val isUrgent = daysRemaining in 1..3 // H-1, H-2, H-3
-        return TrialStatus.TrialActive(daysRemaining, isUrgent)
+        // Automatic 10-day trial starting on install date
+        val trialStart = getTrialStartEpoch(context)
+        val elapsedMs = (now - trialStart).coerceAtLeast(0L)
+        val elapsedDays = elapsedMs / ONE_DAY_MS
+        val remainingDays = (TRIAL_DURATION_DAYS - elapsedDays).coerceAtLeast(0L).toInt()
+
+        return if (remainingDays > 0) {
+            TrialStatus.TrialActive(
+                daysRemaining = remainingDays,
+                isUrgentWarning = remainingDays <= 3
+            )
+        } else {
+            TrialStatus.Expired
+        }
     }
 
     /**
-     * Returns true if user has PRO access (either via active Serial Number or active Trial).
+     * Returns true if user has PRO access (either active Trial or active PRO License).
      */
     fun hasProAccess(context: Context, profile: WorkshopProfile?): Boolean {
         val status = getTrialStatus(context, profile)
         return status is TrialStatus.ProActivated || status is TrialStatus.TrialActive
     }
 
-    fun isPro(profile: WorkshopProfile?): Boolean {
-        if (profile?.subscriptionTier != SubscriptionTier.PRO) return false
-        val validUntil = profile.validUntilEpoch
-        if (validUntil <= 0L) return true
-        return System.currentTimeMillis() <= validUntil
+    fun isPro(context: Context, profile: WorkshopProfile?): Boolean {
+        return hasProAccess(context, profile)
     }
 }
+

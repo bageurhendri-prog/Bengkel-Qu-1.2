@@ -70,8 +70,6 @@ import com.example.data.local.StockStatus
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
 import com.example.ui.components.BarcodeScannerDialog
-import com.example.ui.components.ProFeatureBadge
-import com.example.ui.components.ProUpgradeDialog
 import com.example.util.FeatureGate
 
 @Composable
@@ -92,10 +90,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
     var showBarcodeScanner by remember { mutableStateOf(false) }
     var barcodeForNewItem by remember { mutableStateOf("") }
 
-    // Pro Gate Dialog States
-    var showProUpgradeDialog by remember { mutableStateOf(false) }
-    var proGateTitle by remember { mutableStateOf("") }
-    var proGateReason by remember { mutableStateOf("") }
 
     val filteredStocks = allStocks.filter { item ->
         val matchesSearch = searchQuery.isBlank() ||
@@ -122,14 +116,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
                     IconButton(
                         onClick = {
                             barcodeForNewItem = ""
-                            showBarcodeScanner = true
-                        }
-                    ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = Color.White)
-                    }
-                    IconButton(
-                        onClick = {
-                            barcodeForNewItem = ""
                             showAddStockDialog = true
                         },
                         modifier = Modifier.padding(end = 8.dp)
@@ -146,53 +132,11 @@ fun StokScreen(viewModel: BengkelViewModel) {
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Search Bar & Scan Barcode (matching diagram: "CARI")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Cari Barang / Barcode...") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Cancel, contentDescription = "Clear", tint = Color.Gray)
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
-                )
-
-                Button(
-                    onClick = {
-                        barcodeForNewItem = ""
-                        showBarcodeScanner = true
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(54.dp)
-                ) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("SCAN", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
-
             // Quota / Tier Status Pill
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -203,22 +147,12 @@ fun StokScreen(viewModel: BengkelViewModel) {
                         color = Color.Gray
                     )
                     Text(
-                        text = if (isPro) "${allStocks.size} (Unlimited PRO)" else "${allStocks.size} / 50 (Reguler)",
+                        text = "${allStocks.size} Item Terdaftar",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (allStocks.size >= 50 && !isPro) Color.Red else MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
-                ProFeatureBadge(
-                    isPro = isPro,
-                    onClick = {
-                        if (!isPro) {
-                            proGateTitle = "Fitur Bengkel Qu PRO"
-                            proGateReason = "Tingkatkan ke PRO untuk mengelola katalog sparepart tanpa batasan 50 item dan scan barcode kamera otomatis."
-                            showProUpgradeDialog = true
-                        }
-                    }
-                )
             }
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -827,20 +761,7 @@ fun StokScreen(viewModel: BengkelViewModel) {
         )
     }
 
-    if (showProUpgradeDialog) {
-        ProUpgradeDialog(
-            featureTitle = proGateTitle,
-            reasonText = proGateReason,
-            onDismiss = { showProUpgradeDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
-                    if (success) {
-                        showProUpgradeDialog = false
-                    }
-                }
-            }
-        )
-    }
+
 }
 
 @Composable

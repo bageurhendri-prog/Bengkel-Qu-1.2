@@ -8,56 +8,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.NavigateBefore
-import androidx.compose.material.icons.filled.NavigateNext
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.WorkspacePremium
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,16 +25,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.CustomerService
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
-import com.example.ui.components.ProUpgradeDialog
 import com.example.util.FeatureGate
 import com.example.util.ReportExporter
 import java.text.NumberFormat
@@ -82,24 +39,45 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class MechanicPerformance(
+    val rank: Int,
+    val mechanicName: String,
+    val totalMotor: Int,
+    val totalOmset: Long,
+    val totalJasa: Long,
+    val estimasiKomisi: Long
+)
+
+data class WaBlastCustomerItem(
+    val no: Int,
+    val name: String,
+    val phone: String,
+    val plateNumber: String,
+    val lastDateStr: String,
+    val daysSinceLastService: Int,
+    val lastServiceItems: String,
+    val totalServices: Int,
+    val totalSpending: Long,
+    var isSent: Boolean = false
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MarketingScreen(viewModel: BengkelViewModel) {
     val context = LocalContext.current
     val profile by viewModel.workshopProfile.collectAsStateWithLifecycle()
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
     val activeServices by viewModel.activeServices.collectAsStateWithLifecycle()
+    val staffMembers by viewModel.staffMembers.collectAsStateWithLifecycle()
+
     val allServices = remember(completedServices, activeServices) {
         completedServices + activeServices
     }
 
-    val isPro = FeatureGate.isPro(profile)
-    val hasProAccess = remember(profile) {
-        FeatureGate.hasProAccess(context, profile)
-    }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: 20 Loyal Customer, 1: Best Employee Mekanik, 2: WA Blast
 
-    var showProDialog by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Loyal Customer, 1: WA Blast > 1 Bulan
-    var showTemplateDialog by remember { mutableStateOf(false) }
+    // Selected customer for draft correction popup
+    var editingBlastCustomer by remember { mutableStateOf<WaBlastCustomerItem?>(null) }
     var showAutoBlastDialog by remember { mutableStateOf(false) }
 
     val rupiahFormat = remember {
@@ -108,9 +86,8 @@ fun MarketingScreen(viewModel: BengkelViewModel) {
         }
     }
 
-    // 1. Calculate Loyal Customers (Aggregated by Customer)
+    // 1. Calculate 20 Loyal Customers
     val loyalCustomers = remember(allServices) {
-        // Group by Customer key (Phone or Name+Plate)
         val grouped = allServices.groupBy { service ->
             val cleanPhone = service.phoneNumber.trim().replace(Regex("[^0-9]"), "")
             if (cleanPhone.length >= 8) cleanPhone else "${service.customerName.trim().uppercase()}_${service.plateNumber.trim().uppercase()}"
@@ -120,35 +97,66 @@ fun MarketingScreen(viewModel: BengkelViewModel) {
             val first = services.first()
             val totalServices = services.size
             val totalSpending = services.sumOf { it.totalAmount }
-            val lastDate = services.maxOfOrNull { it.dateEpoch } ?: 0L
 
             ReportExporter.LoyalCustomerData(
-                rank = 0, // will be assigned after sorting
+                rank = 0,
                 name = first.customerName.ifBlank { "Pelanggan" },
                 phone = first.phoneNumber.ifBlank { "-" },
                 plateNumber = first.plateNumber.ifBlank { "-" },
                 totalServices = totalServices,
                 totalSpending = totalSpending,
                 note = ""
-            ) to lastDate
+            )
         }
-            .sortedWith(compareByDescending<Pair<ReportExporter.LoyalCustomerData, Long>> { it.first.totalServices }
-                .thenByDescending { it.first.totalSpending })
-            .mapIndexed { index, (data, lastDate) ->
+            .sortedWith(compareByDescending<ReportExporter.LoyalCustomerData> { it.totalServices }.thenByDescending { it.totalSpending })
+            .take(20)
+            .mapIndexed { index, data ->
                 val rank = index + 1
                 val note = when (rank) {
                     1 -> "⭐ Top #1 Loyal VIP"
                     2 -> "🥈 Top #2 Loyal Gold"
                     3 -> "🥉 Top #3 Loyal Silver"
-                    in 4..10 -> "Top 10 Loyal Customer"
-                    in 11..20 -> "Top 20 Loyal Customer"
-                    else -> "Pelanggan Setia"
+                    in 4..10 -> "Top 10 Pelanggan Setia"
+                    else -> "Top 20 Pelanggan Setia"
                 }
-                data.copy(rank = rank, note = note) to lastDate
+                data.copy(rank = rank, note = note)
             }
     }
 
-    // 2. Calculate WA Blast Customers (> 1 Month Since Last Service)
+    // 2. Calculate Best Employee Performance Mekanik
+    val mechanicPerformances = remember(allServices, staffMembers) {
+        val mechanicList = if (staffMembers.any { it.role == "MEKANIK" }) {
+            staffMembers.filter { it.role == "MEKANIK" }.map { it.name.trim().uppercase() }.distinct()
+        } else {
+            listOf("DAY", "AGUS", "DENI", "BUDI")
+        }
+
+        val allMechanics = (mechanicList + allServices.map { it.mechanicName.trim().uppercase() }).distinct()
+
+        allMechanics.map { mechName ->
+            val mechServices = allServices.filter { it.mechanicName.trim().equals(mechName, ignoreCase = true) }
+            val count = mechServices.size
+            val totalOmset = mechServices.sumOf { it.totalAmount }
+            val jasaOmset = mechServices.sumOf { s ->
+                s.items.filter { !it.isPart }.sumOf { it.price * it.qty }
+            }
+            // Estimasi komisi jasa 35%
+            val komisi = (jasaOmset * 0.35).toLong()
+
+            MechanicPerformance(
+                rank = 0,
+                mechanicName = mechName,
+                totalMotor = count,
+                totalOmset = totalOmset,
+                totalJasa = jasaOmset,
+                estimasiKomisi = komisi
+            )
+        }
+            .sortedWith(compareByDescending<MechanicPerformance> { it.totalMotor }.thenByDescending { it.totalOmset })
+            .mapIndexed { index, item -> item.copy(rank = index + 1) }
+    }
+
+    // 3. Calculate WA Blast Customers (> 1 Month Since Last Service)
     val thirtyDaysMs = remember { 30L * 24L * 60L * 60L * 1000L }
     val now = remember { System.currentTimeMillis() }
 
@@ -159,27 +167,33 @@ fun MarketingScreen(viewModel: BengkelViewModel) {
         }
 
         grouped.mapNotNull { (_, services) ->
-            val first = services.first()
+            val sortedByDate = services.sortedByDescending { it.dateEpoch }
+            val latest = sortedByDate.first()
             val totalServices = services.size
             val totalSpending = services.sumOf { it.totalAmount }
-            val lastDate = services.maxOfOrNull { it.dateEpoch } ?: 0L
+            val lastDate = latest.dateEpoch
 
             val diff = now - lastDate
             if (diff >= thirtyDaysMs && lastDate > 0L) {
                 val days = (diff / (24L * 60L * 60L * 1000L)).toInt()
                 val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale("id", "ID")).format(Date(lastDate))
-                val note = "Lewat $days hari (Perlu Servis & Ganti Oli)"
 
-                ReportExporter.WaBlastCustomerData(
-                    no = 0, // will assign index
+                val itemsSummary = if (latest.items.isNotEmpty()) {
+                    latest.items.joinToString(", ") { it.name }
+                } else {
+                    "Servis Berkala & Ganti Oli"
+                }
+
+                WaBlastCustomerItem(
+                    no = 0,
+                    name = latest.customerName.ifBlank { "Pelanggan" },
+                    phone = latest.phoneNumber.ifBlank { "-" },
+                    plateNumber = latest.plateNumber.ifBlank { "-" },
                     lastDateStr = dateStr,
-                    name = first.customerName.ifBlank { "Pelanggan" },
-                    phone = first.phoneNumber.ifBlank { "-" },
-                    plateNumber = first.plateNumber.ifBlank { "-" },
-                    note = note,
+                    daysSinceLastService = days,
+                    lastServiceItems = itemsSummary,
                     totalServices = totalServices,
-                    totalSpending = totalSpending,
-                    daysSinceLastService = days
+                    totalSpending = totalSpending
                 )
             } else null
         }.sortedByDescending { it.daysSinceLastService }
@@ -188,89 +202,29 @@ fun MarketingScreen(viewModel: BengkelViewModel) {
 
     Scaffold(
         topBar = {
-            BengkelTopBar(
-                title = "MARKETING (PRO)",
-                onBack = { viewModel.navigateTo(BengkelScreen.DASHBOARD) }
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("MARKETING & CRM (PRO)", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                        Text("20 Loyal Customer, Best Mekanik & WA Blast", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f))
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.navigateTo(BengkelScreen.DASHBOARD) }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali", tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
     ) { padding ->
-        if (!hasProAccess) {
-            // PRO LOCKED VIEW
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFEBEE)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Fitur Pro Terkunci",
-                        tint = Color(0xFFC62828),
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Menu Marketing (Khusus PRO)",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFC62828)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Fitur Ranking 20 Loyal Customer, Broadcast WA Blast pelanggan > 1 bulan servis, dan Ekspor Excel Marketing adalah fitur eksklusif Bengkel Qu PRO.",
-                    fontSize = 13.sp,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Langganan Bulanan PRO Resmi: Hubungi Developer\nWA: 085714216556 / bageurhendri@gmail.com",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1565C0),
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { showProDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AKTIFKAN SERIAL NUMBER PRO", fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            // PRO UNLOCKED CONTENT
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
-                // Tab Selection: Loyal Customer vs WA Blast
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+                // Tab Selection
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -279,407 +233,397 @@ fun MarketingScreen(viewModel: BengkelViewModel) {
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("RANKING 20 LOYAL", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
+                        text = { Text("20 LOYAL", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("WA BLAST (>1 BULAN)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
+                        text = { Text("BEST MEKANIK", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("WA BLAST (${waBlastCustomers.size})", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                     )
                 }
 
-                if (selectedTab == 0) {
-                    // TAB 0: RANKING 20 LOYAL CUSTOMER
-                    LoyalCustomerTabContent(
-                        loyalList = loyalCustomers.map { it.first },
+                when (selectedTab) {
+                    0 -> LoyalCustomerView(
+                        loyalList = loyalCustomers,
                         rupiahFormat = rupiahFormat,
                         onExportExcel = { sendWa ->
-                            viewModel.exportLoyalCustomerExcel(
-                                context = context,
-                                list = loyalCustomers.map { it.first },
-                                sendViaWhatsApp = sendWa
-                            )
+                            viewModel.exportLoyalCustomerExcel(context, loyalCustomers, sendWa)
                         },
                         onChatCustomer = { phone, name ->
-                            val msg = "Halo Kak $name, salam dari ${profile?.workshopName ?: "Bengkel Qu"}! Terima kasih telah menjadi pelanggan setia kami. Kami selalu siap melayani perawatan kendaraan Anda."
+                            val msg = "Halo Kak $name, salam dari ${profile?.workshopName ?: "Bengkel Qu"}! Terima kasih atas kepercayaannya selalu servis di bengkel kami."
                             ReportExporter.openDirectWhatsAppChat(context, phone, msg)
                         }
                     )
-                } else {
-                    // TAB 1: WA BLAST ALL CUSTOMERS > 1 MONTH
-                    WaBlastTabContent(
-                        bengkelName = profile?.workshopName ?: "Bengkel Qu",
+                    1 -> BestMechanicView(
+                        performances = mechanicPerformances,
+                        rupiahFormat = rupiahFormat
+                    )
+                    2 -> WaBlastView(
                         blastList = waBlastCustomers,
+                        bengkelName = profile?.workshopName ?: "Bengkel Qu",
                         rupiahFormat = rupiahFormat,
+                        onSelectForCorrection = { item -> editingBlastCustomer = item },
+                        onOpenAutoBlast = { showAutoBlastDialog = true },
                         onExportExcel = { sendWa ->
                             viewModel.exportWaBlastExcel(
-                                context = context,
-                                list = waBlastCustomers,
-                                sendViaWhatsApp = sendWa
+                                context,
+                                waBlastCustomers.map {
+                                    ReportExporter.WaBlastCustomerData(
+                                        no = it.no,
+                                        lastDateStr = it.lastDateStr,
+                                        name = it.name,
+                                        phone = it.phone,
+                                        plateNumber = it.plateNumber,
+                                        note = "Lewat ${it.daysSinceLastService} hari",
+                                        totalServices = it.totalServices,
+                                        totalSpending = it.totalSpending,
+                                        daysSinceLastService = it.daysSinceLastService
+                                    )
+                                },
+                                sendWa
                             )
-                        },
-                        onSendManualWa = { item ->
-                            val msg = "Halo Kak ${item.name}, salam dari ${profile?.workshopName ?: "Bengkel Qu"}. Kendaraan Anda (${item.plateNumber}) sudah 1 bulan sejak servis terakhir pada ${item.lastDateStr}.\n\nKami sarankan untuk melakukan servis berkala dan ganti oli agar performa mesin tetap prima dan hemat bahan bakar. Silakan kunjungi bengkel kami atau balas pesan ini untuk reservasi antrian. Terima kasih!"
-                            ReportExporter.openDirectWhatsAppChat(context, item.phone, msg)
-                        },
-                        onOpenTemplate = { showTemplateDialog = true },
-                        onOpenAutoBlast = { showAutoBlastDialog = true }
+                        }
                     )
                 }
             }
         }
-    }
 
-    if (showProDialog) {
-        ProUpgradeDialog(
-            featureTitle = "MARKETING BENGKEL QU PRO",
-            reasonText = "Fitur Loyal Customer Ranking, Broadcast Pengingat Servis WA Blast, dan Export Excel Marketing memerlukan lisensi Bengkel Qu PRO aktif.",
-            onDismiss = { showProDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
-                    if (success) showProDialog = false
-                }
-            }
-        )
-    }
+    // POP-UP DRAFT KOREKSI WA BERDASARKAN SERVIS TERAKHIR
+    if (editingBlastCustomer != null) {
+        val target = editingBlastCustomer!!
+        val defaultMsg = remember(target) {
+            "Halo Kak ${target.name}, salam dari ${profile?.workshopName ?: "Bengkel Qu"}!\n\nKendaraan Anda (${target.plateNumber}) terakhir servis pada tanggal ${target.lastDateStr} dengan pengerjaan: ${target.lastServiceItems}.\n\nSudah ${target.daysSinceLastService} hari sejak servis terakhir, kami sarankan untuk melakukan servis berkala dan ganti oli rutin agar tarikan mesin tetap bertenaga & awet. Silakan kunjungi bengkel kami atau balas pesan ini untuk reservasi antrian. Terima kasih!"
+        }
 
-    if (showTemplateDialog) {
-        val clipboard = LocalClipboardManager.current
-        val sampleTemplate = "Halo Kak [NAMA], salam dari ${profile?.workshopName ?: "Bengkel Qu"}. Kendaraan [PLAT] sudah 1 bulan sejak servis terakhir. Kami sarankan untuk cek berkala & ganti oli agar mesin tetap prima. Hubungi kami untuk reservasi antrian. Terima kasih!"
+        var draftMessage by remember { mutableStateOf(defaultMsg) }
 
         AlertDialog(
-            onDismissRequest = { showTemplateDialog = false },
+            onDismissRequest = { editingBlastCustomer = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Chat, contentDescription = null, tint = Color(0xFF2E7D32))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Template Pesan WA Blast", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("DRAFT WA: ${target.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
-                Column {
-                    Text(
-                        text = "Format pesan pengingat otomatis untuk pelanggan yang sudah 1 bulan servis:",
-                        fontSize = 12.sp,
-                        color = Color.DarkGray
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) {
+                    Text(text = "Plat: ${target.plateNumber} • WA: ${target.phone}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "Histori Servis Terakhir: ${target.lastDateStr}", fontSize = 11.sp, color = Color(0xFFC62828), fontWeight = FontWeight.SemiBold)
+                    Text(text = "Item Terakhir: ${target.lastServiceItems}", fontSize = 11.sp, color = Color.DarkGray)
+
                     Spacer(modifier = Modifier.height(10.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFFC8E6C9)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = sampleTemplate,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(12.dp),
-                            color = Color(0xFF1B5E20)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Tips: Tombol 'KIRIM WA' pada setiap kartu pelanggan akan otomatis mengisi nama dan nomor plat pelanggan bersangkutan.",
-                        fontSize = 11.sp,
-                        color = Color.Gray
+                    Text(text = "KOREKSI ISI PESAN WA SEBELUM KIRIM:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    OutlinedTextField(
+                        value = draftMessage,
+                        onValueChange = { draftMessage = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        maxLines = 8,
+                        shape = RoundedCornerShape(8.dp)
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        clipboard.setText(AnnotatedString(sampleTemplate))
-                        Toast.makeText(context, "Template pesan disalin ke clipboard", Toast.LENGTH_SHORT).show()
-                        showTemplateDialog = false
+                        ReportExporter.openDirectWhatsAppChat(context, target.phone, draftMessage)
+                        target.isSent = true
+                        editingBlastCustomer = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("SALIN TEMPLATE")
+                    Text("SEND WA SEKARANG")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showTemplateDialog = false }) {
-                    Text("TUTUP")
+                TextButton(onClick = { editingBlastCustomer = null }) {
+                    Text("BATAL")
                 }
             }
         )
     }
 
-    if (showAutoBlastDialog) {
-        AutoWaBlastDialog(
-            bengkelName = profile?.workshopName ?: "Bengkel Qu",
-            blastList = waBlastCustomers,
-            onDismiss = { showAutoBlastDialog = false },
-            onSendWa = { item ->
-                val msg = "Halo Kak ${item.name}, salam dari ${profile?.workshopName ?: "Bengkel Qu"}. Kendaraan Anda (${item.plateNumber}) sudah 1 bulan sejak servis terakhir pada ${item.lastDateStr}.\n\nKami sarankan untuk melakukan servis berkala dan ganti oli agar performa mesin tetap prima dan hemat bahan bakar. Silakan kunjungi bengkel kami atau balas pesan ini untuk reservasi antrian. Terima kasih!"
-                ReportExporter.openDirectWhatsAppChat(context, item.phone, msg)
-            }
-        )
-    }
+
 }
 
+// -------------------------------------------------------------
+// TAB 1: 20 CUSTOMER LOYAL
+// -------------------------------------------------------------
 @Composable
-private fun LoyalCustomerTabContent(
+private fun LoyalCustomerView(
     loyalList: List<ReportExporter.LoyalCustomerData>,
     rupiahFormat: NumberFormat,
     onExportExcel: (Boolean) -> Unit,
     onChatCustomer: (String, String) -> Unit
 ) {
-    val top20 = remember(loyalList) { loyalList.take(20) }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Summary & Export Action Card
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)),
                 border = BorderStroke(1.dp, Color(0xFFFFD54F))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
+                    Text("TOP 20 CUSTOMER LOYAL", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFE65100))
+                    Text("Pelanggan paling sering berkunjung & total belanja tertinggi", fontSize = 11.sp, color = Color.DarkGray)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onExportExcel(false) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("SAVE EXCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { onExportExcel(true) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("SEND WA EXCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (loyalList.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("Belum ada data pelanggan tercatat.", color = Color.Gray, fontSize = 13.sp)
+                }
+            }
+        } else {
+            items(loyalList) { customer ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (customer.rank) {
+                                        1 -> Color(0xFFFFD700)
+                                        2 -> Color(0xFFC0C0C0)
+                                        3 -> Color(0xFFCD7F32)
+                                        else -> Color(0xFFE0E0E0)
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "#${customer.rank}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                color = if (customer.rank <= 3) Color.Black else Color.DarkGray
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    customer.plateNumber,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1565C0),
+                                    modifier = Modifier.background(Color(0xFFE3F2FD), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                            Text("Total: ${customer.totalServices}x Servis • Belanja: ${rupiahFormat.format(customer.totalSpending)}", fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.SemiBold)
+                            Text(customer.note, fontSize = 10.sp, color = Color(0xFFE65100), fontWeight = FontWeight.Bold)
+                        }
+
+                        if (customer.phone.isNotBlank() && customer.phone != "-") {
+                            IconButton(onClick = { onChatCustomer(customer.phone, customer.name) }) {
+                                Icon(Icons.Default.Chat, contentDescription = "Chat", tint = Color(0xFF2E7D32))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// TAB 2: BEST EMPLOYEE PERFORMANCE MEKANIK
+// -------------------------------------------------------------
+@Composable
+private fun BestMechanicView(
+    performances: List<MechanicPerformance>,
+    rupiahFormat: NumberFormat
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            val best = performances.firstOrNull()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF9C4)),
+                border = BorderStroke(1.5.dp, Color(0xFFFBC02D))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(
-                                text = "RANKING 20 LOYAL CUSTOMER",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color(0xFFE65100)
-                            )
-                            Text(
-                                text = "Berdasarkan frekuensi servis terbanyak & total biaya",
-                                fontSize = 11.sp,
-                                color = Color(0xFF5D4037)
-                            )
+                            Text("🏆 BEST MECHANIC OF THE MONTH", fontWeight = FontWeight.Black, fontSize = 14.sp, color = Color(0xFFF57F17))
+                            Text("Kinerja mekanik terbaik dengan unit servis terbanyak", fontSize = 11.sp, color = Color.DarkGray)
                         }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFFFB300))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("Top 20", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                        }
+                        Text("JUARA 1", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFFF57F17))
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Export File Excel (1-50)
-                        Button(
-                            onClick = { onExportExcel(false) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("SIMPAN EXCEL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        // Send WA Excel
-                        Button(
-                            onClick = { onExportExcel(true) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("KIRIM WA (EXCEL)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (best != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFFD54F)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(28.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(best.mechanicName, fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.Black)
+                                Text("${best.totalMotor} Unit Motor Diselesaikan", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF2E7D32))
+                                Text("Omset: ${rupiahFormat.format(best.totalOmset)} • Estimasi Komisi: ${rupiahFormat.format(best.estimasiKomisi)}", fontSize = 11.sp, color = Color.DarkGray)
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "* Ekspor Excel mencakup rekap No 1 s/d 50 pelanggan loyal.",
-                        fontSize = 10.sp,
-                        color = Color.Gray
-                    )
                 }
             }
         }
 
-        if (top20.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Belum ada riwayat transaksi servis pelanggan yang tercatat.",
-                        color = Color.Gray,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        } else {
-            items(top20) { item ->
-                LoyalCustomerCard(
-                    item = item,
-                    rupiahFormat = rupiahFormat,
-                    onChatClick = { onChatCustomer(item.phone, item.name) }
-                )
-            }
+        item {
+            Text("PERINGKAT KINERJA SEMUA MEKANIK", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
         }
-    }
-}
 
-@Composable
-private fun LoyalCustomerCard(
-    item: ReportExporter.LoyalCustomerData,
-    rupiahFormat: NumberFormat,
-    onChatClick: () -> Unit
-) {
-    val rankColor = when (item.rank) {
-        1 -> Color(0xFFFFB300) // Gold
-        2 -> Color(0xFF78909C) // Silver
-        3 -> Color(0xFF8D6E63) // Bronze
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Rank Badge Circle
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(rankColor),
-                contentAlignment = Alignment.Center
+        items(performances) { mech ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Text(
-                    text = "#${item.rank}",
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 14.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = item.plateNumber,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF1565C0),
-                        modifier = Modifier
-                            .background(Color(0xFFE3F2FD), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Total: ${item.totalServices}x Servis",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E7D32)
-                    )
-                    Text(
-                        text = "Biaya: ${rupiahFormat.format(item.totalSpending)}",
-                        fontSize = 11.sp,
-                        color = Color(0xFFE65100),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when (mech.rank) {
+                                    1 -> Color(0xFFFFD700)
+                                    2 -> Color(0xFFC0C0C0)
+                                    3 -> Color(0xFFCD7F32)
+                                    else -> Color(0xFFECEFF1)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "#${mech.rank}",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp,
+                            color = if (mech.rank <= 3) Color.Black else Color.DarkGray
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "WA: ${item.phone} • ${item.note}",
-                    fontSize = 10.sp,
-                    color = Color.Gray
-                )
-            }
+                    Spacer(modifier = Modifier.width(12.dp))
 
-            if (item.phone.isNotBlank() && item.phone != "-") {
-                Button(
-                    onClick = onChatClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Icon(Icons.Default.Chat, contentDescription = "Chat WA", modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("WA", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(mech.mechanicName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            "${mech.totalMotor} Motor Diservis • Omset Jasa: ${rupiahFormat.format(mech.totalJasa)}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF1565C0),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Estimasi Bagi Hasil/Komisi: ${rupiahFormat.format(mech.estimasiKomisi)}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF2E7D32),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+// -------------------------------------------------------------
+// TAB 3: WA BLAST PENGINGAT SERVIS & LOG / DRAFT POPUP
+// -------------------------------------------------------------
 @Composable
-private fun WaBlastTabContent(
+private fun WaBlastView(
+    blastList: List<WaBlastCustomerItem>,
     bengkelName: String,
-    blastList: List<ReportExporter.WaBlastCustomerData>,
     rupiahFormat: NumberFormat,
-    onExportExcel: (Boolean) -> Unit,
-    onSendManualWa: (ReportExporter.WaBlastCustomerData) -> Unit,
-    onOpenTemplate: () -> Unit,
-    onOpenAutoBlast: () -> Unit
+    onSelectForCorrection: (WaBlastCustomerItem) -> Unit,
+    onOpenAutoBlast: () -> Unit,
+    onExportExcel: (Boolean) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Summary & Actions Header Card
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
                 border = BorderStroke(1.dp, Color(0xFFA5D6A7))
             ) {
@@ -690,85 +634,40 @@ private fun WaBlastTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(
-                                text = "PENGINGAT SERVIS (>1 BULAN)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color(0xFF1B5E20)
-                            )
-                            Text(
-                                text = "Pelanggan yang sudah 30+ hari tidak berkunjung ke bengkel",
-                                fontSize = 11.sp,
-                                color = Color(0xFF2E7D32)
-                            )
+                            Text("WA BLAST PENGINGAT SERVIS", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1B5E20))
+                            Text("Target pelanggan > 30 hari belum servis", fontSize = 11.sp, color = Color(0xFF2E7D32))
                         }
-
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(6.dp))
                                 .background(Color(0xFF2E7D32))
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("${blastList.size} Orang", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
+                            Text("${blastList.size} Target", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Row 1: AUTO WA BLAST & TEMPLATE
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = onOpenAutoBlast,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1.2f)
-                        ) {
-                            Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("AUTO WA BLAST", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        OutlinedButton(
-                            onClick = onOpenTemplate,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(0.9f)
-                        ) {
-                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF2E7D32))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("TEMPLATE", fontSize = 10.sp, color = Color(0xFF2E7D32))
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Row 2: EXPORT EXCEL & KIRIM WA EXCEL
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
                             onClick = { onExportExcel(false) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("SIMPAN EXCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("SAVE EXCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
-
                         Button(
                             onClick = { onExportExcel(true) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("KIRIM WA (EXCEL)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("SEND WA EXCEL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -777,321 +676,68 @@ private fun WaBlastTabContent(
 
         if (blastList.isEmpty()) {
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Semua pelanggan baru saja servis dalam 30 hari terakhir.",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Color(0xFF2E7D32)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Tidak ada pelanggan yang melewati batas 1 bulan tanpa servis.",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
-                    }
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("Semua pelanggan rutin servis dalam 30 hari terakhir!", color = Color.Gray, fontSize = 13.sp)
                 }
             }
         } else {
             items(blastList) { item ->
-                WaBlastCustomerCard(
-                    item = item,
-                    rupiahFormat = rupiahFormat,
-                    onSendWa = { onSendManualWa(item) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WaBlastCustomerCard(
-    item: ReportExporter.WaBlastCustomerData,
-    rupiahFormat: NumberFormat,
-    onSendWa: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Index number Box
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFFFEBEE)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "${item.no}",
-                    color = Color(0xFFC62828),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = item.plateNumber,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFC62828),
-                        modifier = Modifier
-                            .background(Color(0xFFFFEBEE), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "Terakhir: ${item.lastDateStr} (${item.daysSinceLastService} hari yang lalu)",
-                    fontSize = 11.sp,
-                    color = Color(0xFFD32F2F),
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "WA: ${item.phone} • Riwayat: ${item.totalServices}x (${rupiahFormat.format(item.totalSpending)})",
-                    fontSize = 10.sp,
-                    color = Color.Gray
-                )
-            }
-
-            Button(
-                onClick = onSendWa,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("KIRIM WA", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-fun AutoWaBlastDialog(
-    bengkelName: String,
-    blastList: List<ReportExporter.WaBlastCustomerData>,
-    onDismiss: () -> Unit,
-    onSendWa: (ReportExporter.WaBlastCustomerData) -> Unit
-) {
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    var currentIndex by remember { mutableIntStateOf(0) }
-
-    if (blastList.isEmpty()) {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("Auto WA Blast", fontWeight = FontWeight.Bold) },
-            text = { Text("Tidak ada pelanggan yang melewati batas 1 bulan tanpa servis.") },
-            confirmButton = {
-                Button(onClick = onDismiss) { Text("OK") }
-            }
-        )
-        return
-    }
-
-    val currentCustomer = blastList.getOrElse(currentIndex) { blastList.first() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Campaign, contentDescription = null, tint = Color(0xFFE65100))
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "Asisten Auto WA Blast",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = Color(0xFFE65100)
-                    )
-                    Text(
-                        text = "Target ${currentIndex + 1} dari ${blastList.size} Pelanggan",
-                        fontSize = 11.sp,
-                        color = Color.Gray
-                    )
-                }
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFFCC80)),
-                    modifier = Modifier.fillMaxWidth()
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(if (item.isSent) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = currentCustomer.name,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                            Text(
-                                text = currentCustomer.plateNumber,
+                                text = "${item.no}",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
-                                color = Color(0xFFE65100),
-                                modifier = Modifier
-                                    .background(Color(0xFFFFE0B2), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                color = if (item.isSent) Color(0xFF2E7D32) else Color(0xFFC62828)
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "WhatsApp: ${currentCustomer.phone}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Terakhir Servis: ${currentCustomer.lastDateStr} (${currentCustomer.daysSinceLastService} hari lalu)",
-                            fontSize = 11.sp,
-                            color = Color(0xFFD32F2F)
-                        )
-                    }
-                }
 
-                Text(
-                    text = "Pesan Otomatis Siap Kirim:",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.DarkGray
-                )
+                        Spacer(modifier = Modifier.width(10.dp))
 
-                val previewMessage = remember(currentCustomer, bengkelName) {
-                    "Halo Kak ${currentCustomer.name}, salam dari $bengkelName. Kendaraan Anda (${currentCustomer.plateNumber}) sudah 1 bulan sejak servis terakhir pada ${currentCustomer.lastDateStr}.\n\nKami sarankan untuk melakukan servis berkala dan ganti oli agar performa mesin tetap prima dan hemat bahan bakar. Silakan kunjungi bengkel kami atau balas pesan ini untuk reservasi antrian. Terima kasih!"
-                }
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFC8E6C9)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = previewMessage,
-                        fontSize = 11.sp,
-                        color = Color(0xFF1B5E20),
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    TextButton(
-                        onClick = {
-                            val allPhones = blastList.mapNotNull {
-                                val clean = it.phone.trim().replace(Regex("[^0-9]"), "")
-                                if (clean.length >= 8) clean else null
-                            }.joinToString("\n")
-                            clipboard.setText(AnnotatedString(allPhones))
-                            Toast.makeText(context, "${blastList.size} nomor WA disalin ke clipboard", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("SALIN SEMUA NO WA", fontSize = 10.sp)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(
-                    onClick = {
-                        onSendWa(currentCustomer)
-                        if (currentIndex < blastList.size - 1) {
-                            currentIndex++
-                        } else {
-                            Toast.makeText(context, "Seluruh pelanggan target WA Blast telah diproses!", Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (currentIndex < blastList.size - 1) "KIRIM WA & LANJUT" else "KIRIM WA (TERAKHIR)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { if (currentIndex > 0) currentIndex-- },
-                        enabled = currentIndex > 0,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.NavigateBefore, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text("SEBELUMNYA", fontSize = 10.sp)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            if (currentIndex < blastList.size - 1) {
-                                currentIndex++
-                            } else {
-                                onDismiss()
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(item.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    item.plateNumber,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFC62828),
+                                    modifier = Modifier.background(Color(0xFFFFEBEE), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
                             }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(if (currentIndex < blastList.size - 1) "LEWATI" else "SELESAI", fontSize = 10.sp)
-                        Icon(Icons.Default.NavigateNext, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text("Terakhir: ${item.lastDateStr} (${item.daysSinceLastService} hari lalu)", fontSize = 11.sp, color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
+                            Text("Pengerjaan: ${item.lastServiceItems}", fontSize = 10.sp, color = Color.Gray, maxLines = 1)
+                        }
+
+                        Button(
+                            onClick = { onSelectForCorrection(item) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (item.isSent) Color(0xFF689F38) else Color(0xFF2E7D32)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (item.isSent) "SENT" else "KOREKSI & SEND", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("TUTUP", color = Color.Gray)
             }
         }
-    )
+    }
 }

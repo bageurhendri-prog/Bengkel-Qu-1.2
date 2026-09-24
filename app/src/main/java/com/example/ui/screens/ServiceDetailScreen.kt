@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,23 +13,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddBusiness
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
+import com.example.data.local.StockItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,8 +72,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
 import com.example.ui.components.BarcodeScannerDialog
-import com.example.ui.components.ProFeatureBadge
-import com.example.ui.components.ProUpgradeDialog
 import com.example.util.FeatureGate
 
 @Composable
@@ -78,11 +87,6 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
     var showEditNotesDialog by remember { mutableStateOf(false) }
     var showPrintPdfDialog by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
-
-    // Pro Dialog States
-    var showProUpgradeDialog by remember { mutableStateOf(false) }
-    var proGateTitle by remember { mutableStateOf("") }
-    var proGateReason by remember { mutableStateOf("") }
 
     if (service == null) {
         viewModel.navigateTo(BengkelScreen.SERVICE_QUEUE)
@@ -211,14 +215,7 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Button(
                                 onClick = {
-                                    val gate = FeatureGate.canUseBarcodeScanner(isPro)
-                                    if (gate is FeatureGate.GateResult.Denied) {
-                                        proGateTitle = gate.featureName
-                                        proGateReason = gate.reason
-                                        showProUpgradeDialog = true
-                                    } else {
-                                        showBarcodeScanner = true
-                                    }
+                                    showBarcodeScanner = true
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                                 shape = RoundedCornerShape(8.dp)
@@ -412,30 +409,30 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
                 }
             }
 
-            // ACTION BUTTONS (matching diagram: BAYAR, CETAK PDF, KIRIM WA / KIRIM TAGIHAN)
+            // ACTION BUTTONS (Sesuai Permintaan: Bayar diganti SELESAI AUTO BILL SEND WA & MASUK KASIR)
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Button BAYAR
+                // Tombol SELESAI (KIRIM BILL WA & MASUK KASIR)
                 Button(
-                    onClick = { viewModel.payAndCompleteService(context) },
+                    onClick = { viewModel.finishServiceAndSendToKasir(context) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = Color(0xFF1B5E20),
                         contentColor = Color.White
                     )
                 ) {
-                    Icon(Icons.Default.Payment, contentDescription = null)
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "BAYAR (SELESAIKAN)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        letterSpacing = 1.sp
+                        text = "SELESAI (KIRIM BILL WA & MASUK KASIR)",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp,
+                        letterSpacing = 0.5.sp
                     )
                 }
 
@@ -458,7 +455,7 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
                         Text(text = "CETAK PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    // Button KIRIM WA (matching diagram)
+                    // Button KIRIM WA TAGIHAN
                     Button(
                         onClick = { viewModel.sendBillViaWhatsApp(context, currentService) },
                         modifier = Modifier.weight(1f).height(48.dp),
@@ -468,7 +465,7 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
                             contentColor = Color.White
                         )
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(text = "KIRIM WA", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
@@ -477,89 +474,188 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
         }
     }
 
-    // Modal: Tambah Belanja Sparepart (select from stock or type new)
+    // Modal: Tambah Belanja Sparepart (HARUS DARI STOK SPAREPART, TIDAK BOLEH INPUT BEBAS/STOK KOSONG)
     if (showAddPartDialog) {
-        var selectedStockName by remember { mutableStateOf("") }
-        var partPriceStr by remember { mutableStateOf("") }
-        var customPartName by remember { mutableStateOf("") }
+        var searchQuery by remember { mutableStateOf("") }
+        var selectedStockItem by remember { mutableStateOf<StockItem?>(null) }
+
+        val filteredStocks = allStocks.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+            it.brand.contains(searchQuery, ignoreCase = true) ||
+            it.barcode.contains(searchQuery, ignoreCase = true)
+        }
 
         AlertDialog(
             onDismissRequest = { showAddPartDialog = false },
-            title = { Text("TAMBAH BELANJA SPAREPART", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Inventory2, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("TAMBAH BELANJA DARI STOK", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
             text = {
-                Column {
-                    Text("Pilih dari Stok:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        allStocks.take(5).forEach { stock ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedStockName = stock.name.lowercase()
-                                        partPriceStr = stock.sellPrice.toString()
-                                    },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (selectedStockName == stock.name.lowercase())
-                                        MaterialTheme.colorScheme.primaryContainer else Color(0xFFF5F5F5)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Sparepart wajib terdaftar di katalog & memiliki sisa stok fisik.",
+                        fontSize = 11.sp,
+                        color = Color.DarkGray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Input Cari Barang di Stok
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Cari nama part / barcode / brand...", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (filteredStocks.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFFF3E0), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Barang tidak ditemukan di stok!",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFE65100)
                                 )
-                            ) {
-                                Row(
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Silakan tambah barang baru atau terima barang datang di menu Stok.",
+                                    fontSize = 10.sp,
+                                    color = Color.DarkGray
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredStocks) { stock ->
+                                val isSelected = selectedStockItem?.id == stock.id
+                                val isOutOfStock = stock.qty <= 0
+
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .clickable(enabled = !isOutOfStock) {
+                                            selectedStockItem = stock
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = when {
+                                            isOutOfStock -> Color(0xFFFFEBEE)
+                                            isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                            else -> Color(0xFFF5F5F5)
+                                        }
+                                    ),
+                                    border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
                                 ) {
-                                    Text(stock.name, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                    Text(formatRupiah(stock.sellPrice), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stock.name,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isOutOfStock) Color(0xFFC62828) else Color.Black
+                                            )
+                                            Text(
+                                                text = "${stock.brand} • ${stock.quality}",
+                                                fontSize = 10.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = formatRupiah(stock.sellPrice),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1B5E20)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(if (isOutOfStock) Color(0xFFD32F2F) else Color(0xFF388E3C))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isOutOfStock) "STOK KOSONG" else "Stok: ${stock.qty}",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Atau Tulis Sparepart Baru:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = customPartName,
-                        onValueChange = {
-                            customPartName = it
-                            selectedStockName = it
-                        },
-                        label = { Text("Nama Sparepart (misal: oli shel, kanvas)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
 
-                    Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = partPriceStr,
-                        onValueChange = { partPriceStr = it },
-                        label = { Text("Harga (Rp)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // Shortcut ke menu Stok jika stok kosong
+                    OutlinedButton(
+                        onClick = {
+                            showAddPartDialog = false
+                            viewModel.navigateTo(BengkelScreen.STOK)
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                    ) {
+                        Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("TAMBAH STOK DI MENU SPAREPART", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val name = selectedStockName.ifBlank { customPartName }
-                        val price = partPriceStr.toLongOrNull() ?: 0L
-                        if (name.isNotBlank() && price > 0L) {
-                            viewModel.addServiceItemToCustomer(
-                                itemId = "part_${System.currentTimeMillis()}",
-                                name = name,
-                                price = price,
-                                isPart = true
-                            )
-                            showAddPartDialog = false
+                        val item = selectedStockItem
+                        if (item != null) {
+                            if (item.qty <= 0) {
+                                Toast.makeText(context, "Stok barang ini kosong! Tambah stok di menu Sparepart terlebih dahulu.", Toast.LENGTH_LONG).show()
+                            } else {
+                                viewModel.addPartFromStock(currentService.id, item, context)
+                                showAddPartDialog = false
+                            }
                         } else {
-                            Toast.makeText(context, "Masukkan nama dan harga valid", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Pilih sparepart dari daftar stok terlebih dahulu", Toast.LENGTH_SHORT).show()
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("TAMBAH")
+                    Text("PASANG PART")
                 }
             },
             dismissButton = {
@@ -833,31 +929,14 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
                         color = Color.Gray
                     )
 
-                    if (isPro) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "[✓ NOTA RESMI - BENGKEL QU PRO]",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "*** [VERSI REGULER - FREE WATERMARK] ***",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD32F2F)
-                        )
-                        Text(
-                            text = "Upgrade ke PRO untuk nota resmi tanpa watermark",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
-                            color = Color.Gray
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "[✓ NOTA RESMI - BENGKEL QU]",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2E7D32)
+                    )
                 }
             },
             confirmButton = {
@@ -905,18 +984,5 @@ fun ServiceDetailScreen(viewModel: BengkelViewModel) {
         )
     }
 
-    if (showProUpgradeDialog) {
-        ProUpgradeDialog(
-            featureTitle = proGateTitle,
-            reasonText = proGateReason,
-            onDismiss = { showProUpgradeDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
-                    if (success) {
-                        showProUpgradeDialog = false
-                    }
-                }
-            }
-        )
-    }
+
 }

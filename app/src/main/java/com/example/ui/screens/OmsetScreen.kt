@@ -62,7 +62,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.CustomerService
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
-import com.example.ui.components.ProUpgradeDialog
 import com.example.util.FeatureGate
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -76,11 +75,6 @@ fun OmsetScreen(viewModel: BengkelViewModel) {
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
     val workshopProfile by viewModel.workshopProfile.collectAsStateWithLifecycle()
 
-    val hasProAccess = remember(workshopProfile) {
-        FeatureGate.hasProAccess(context, workshopProfile)
-    }
-
-    var showProDialog by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("Bulan Ini") }
 
     val filterOptions = listOf("Hari Ini", "7 Hari Terakhir", "Bulan Ini", "Tahun Ini", "Semua Data")
@@ -146,75 +140,15 @@ fun OmsetScreen(viewModel: BengkelViewModel) {
             )
         }
     ) { padding ->
-        if (!hasProAccess) {
-            // LOCKED SCREEN FOR NON-PRO / EXPIRED TRIAL
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFEBEE)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Fitur Pro Terkunci",
-                        tint = Color(0xFFC62828),
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Laporan Omset (Khusus PRO)",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFC62828)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Masa trial 10 hari telah selesai atau lisensi belum aktif. Fitur Laporan Omset, Filter Tanggal, dan Ekspor Excel hanya tersedia pada versi Bengkel Qu PRO.",
-                    fontSize = 13.sp,
-                    color = Color.Gray,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { showProDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AKTIFKAN SERIAL NUMBER PRO", fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            // PRO ACTIVE SCREEN
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
                 // FILTER TANGGAL BAR
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -494,21 +428,5 @@ fun OmsetScreen(viewModel: BengkelViewModel) {
 
                 Spacer(modifier = Modifier.height(20.dp))
             }
-        }
-    }
-
-    if (showProDialog) {
-        ProUpgradeDialog(
-            featureTitle = "LAPORAN OMSET BENGKEL PRO",
-            reasonText = "Akses Laporan Omset, Filter Rentang Tanggal, Analisa Keuangan, dan Ekspor Excel otomatis.",
-            onDismiss = { showProDialog = false },
-            onActivateKey = { key ->
-                viewModel.activateProLicense(key, context) { success, _ ->
-                    if (success) {
-                        showProDialog = false
-                    }
-                }
-            }
-        )
     }
 }

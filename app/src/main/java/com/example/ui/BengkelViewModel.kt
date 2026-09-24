@@ -43,6 +43,7 @@ enum class BengkelScreen {
     DASHBOARD,
     SERVICE_QUEUE,
     SERVICE_DETAIL,
+    KASIR,
     SETORAN,
     PENGELUARAN,
     STOK,
@@ -122,8 +123,15 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     val completedServices: StateFlow<List<CustomerService>> = repository.completedServices
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allCustomerServices: StateFlow<List<CustomerService>> = repository.allServices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val customerServices: StateFlow<List<CustomerService>> = allCustomerServices
+
     val allStockItems: StateFlow<List<StockItem>> = repository.allStockItems
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val stockList: StateFlow<List<StockItem>> = allStockItems
 
     val incomingStocks: StateFlow<List<IncomingStock>> = repository.incomingStocks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -148,8 +156,24 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val isProUser: StateFlow<Boolean> = repository.workshopProfile
-        .map { profile -> FeatureGate.isPro(profile) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .map { profile ->
+            FeatureGate.hasProAccess(getApplication(), profile)
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            FeatureGate.hasProAccess(getApplication(), null)
+        )
+
+    val trialStatus: StateFlow<FeatureGate.TrialStatus> = repository.workshopProfile
+        .map { profile ->
+            FeatureGate.getTrialStatus(getApplication(), profile)
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            FeatureGate.getTrialStatus(getApplication(), null)
+        )
 
     val staffMembers: StateFlow<List<StaffMember>> = repository.staffMembers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -275,6 +299,200 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
             repository.updateCustomerService(updated)
             Toast.makeText(context, "Pembayaran berhasil dicatat untuk antrian #${updated.queueNumber}", Toast.LENGTH_SHORT).show()
             _currentScreen.value = BengkelScreen.SERVICE_QUEUE
+        }
+    }
+
+    /**
+     * Sesuai permintaan user:
+     * "Nota - proses/tambah part -bayar ganti selesai auto bill send wa - card pindah masuk kasir"
+     */
+    fun finishServiceAndSendToKasir(context: Context) {
+        val current = _selectedCustomerService.value ?: return
+        val updated = current.copy(
+            status = ServiceStatus.SELESAI,
+            dateEpoch = System.currentTimeMillis()
+        )
+        _selectedCustomerService.value = updated
+        viewModelScope.launch {
+            repository.updateCustomerService(updated)
+            // Auto kirim bill tagihan via WhatsApp ke pelanggan
+            sendBillViaWhatsApp(context, updated)
+            Toast.makeText(context, "Pengerjaan selesai! Nota antrian #${updated.queueNumber} berpindah ke Kasir.", Toast.LENGTH_LONG).show()
+            // Navigasi langsung ke KASIR
+            _currentScreen.value = BengkelScreen.KASIR
+        }
+    }
+
+    /**
+     * Kasir: Proses Pembayaran (CASH, TF, QRIS, OJOL)
+     */
+    fun processKasirPayment(service: CustomerService, method: String, context: Context, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val updated = service.copy(
+                status = ServiceStatus.DIBAYAR,
+                paymentMethod = method.uppercase(),
+                dateEpoch = System.currentTimeMillis()
+            )
+            repository.updateCustomerService(updated)
+            Toast.makeText(context, "Pembayaran antrian #${service.queueNumber} ($method) berhasil!", Toast.LENGTH_SHORT).show()
+            onComplete()
+        }
+    }
+
+    fun processKasirPayment(
+        serviceId: Long,
+        method: String,
+        amountPaid: Long,
+        context: Context,
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val service = repository.getCustomerServiceById(serviceId) ?: return@launch
+            val updated = service.copy(
+                status = ServiceStatus.DIBAYAR,
+                paymentMethod = method.uppercase(),
+                dateEpoch = System.currentTimeMillis()
+            )
+            repository.updateCustomerService(updated)
+            Toast.makeText(context, "Pembayaran antrian #${service.queueNumber} ($method) berhasil!", Toast.LENGTH_SHORT).show()
+            onComplete()
+        }
+    }
+
+    /**
+     * Tambah belanja/sparepart ke servis - HARUS dari stok sparepart (tidak boleh jika stok kosong).
+     */
+    fun addPartFromStock(serviceId: Long, stockItem: StockItem, context: Context) {
+        if (stockItem.qty <= 0) {
+            Toast.makeText(context, "Stok barang kosong! Silakan tambah stok di menu Sparepart & Stok.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        viewModelScope.launch {
+            val service = repository.getCustomerServiceById(serviceId) ?: return@launch
+            val newItem = ServiceItemDetail(
+                name = stockItem.name,
+                price = stockItem.sellPrice,
+                qty = 1,
+                isPart = true
+            )
+            val updatedItems = service.items + newItem
+            val newTotal = updatedItems.sumOf { it.price * it.qty } - service.discount
+            val updatedService = service.copy(
+                items = updatedItems,
+                totalAmount = maxOf(0L, newTotal)
+            )
+            repository.updateCustomerService(updatedService)
+
+            // Kurangi stok barang 1 pcs
+            repository.updateStockItem(stockItem.copy(qty = stockItem.qty - 1))
+
+            if (_selectedCustomerService.value?.id == serviceId) {
+                _selectedCustomerService.value = updatedService
+            }
+            Toast.makeText(context, "${stockItem.name} ditambahkan ke nota. Sisa stok: ${stockItem.qty - 1}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Koreksi Kasir / Servis: Hapus part dari nota & kembalikan stoknya jika ada
+     */
+    fun removePartFromService(serviceId: Long, itemDetail: ServiceItemDetail, context: Context) {
+        viewModelScope.launch {
+            val service = repository.getCustomerServiceById(serviceId) ?: return@launch
+            val updatedItems = service.items.filterNot { it.id == itemDetail.id }
+            val newTotal = updatedItems.sumOf { it.price * it.qty } - service.discount
+            val updatedService = service.copy(
+                items = updatedItems,
+                totalAmount = maxOf(0L, newTotal)
+            )
+            repository.updateCustomerService(updatedService)
+
+            // Kembalikan stok jika part
+            if (itemDetail.isPart) {
+                val allStocks = repository.getAllStockItemsList()
+                val matched = allStocks.find { it.name.equals(itemDetail.name, ignoreCase = true) }
+                if (matched != null) {
+                    repository.updateStockItem(matched.copy(qty = matched.qty + itemDetail.qty))
+                }
+            }
+
+            if (_selectedCustomerService.value?.id == serviceId) {
+                _selectedCustomerService.value = updatedService
+            }
+            Toast.makeText(context, "${itemDetail.name} dihapus dari nota.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Kirim WA Nota Lunas Resmi ke Pelanggan
+     */
+    fun sendReceiptViaWhatsApp(context: Context, service: CustomerService) {
+        val profile = workshopProfile.value
+        val workshopName = profile?.workshopName ?: "BENGKEL QU"
+        val phoneBengkel = profile?.phone ?: ""
+
+        val rupiah = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
+        val dateFormatted = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(service.dateEpoch))
+
+        val sb = StringBuilder()
+        sb.appendLine("*BUKTI PEMBAYARAN LUNAS - $workshopName*")
+        sb.appendLine("Tanggal     : $dateFormatted")
+        sb.appendLine("No. Antrian : #${service.queueNumber}")
+        sb.appendLine("Pelanggan   : ${service.customerName}")
+        sb.appendLine("No. Plat    : ${service.plateNumber}")
+        sb.appendLine("Mekanik     : ${service.mechanicName}")
+        sb.appendLine("Metode Bayar: *${service.paymentMethod}*")
+        sb.appendLine("Status      : *LUNAS*")
+        sb.appendLine("--------------------------------")
+        sb.appendLine("*RINCIAN PEKERJAAN & PART:*")
+        service.items.forEach { item ->
+            val type = if (item.isPart) "[Part]" else "[Jasa]"
+            sb.appendLine("- $type ${item.name} (${item.qty}x) = ${rupiah.format(item.price * item.qty)}")
+        }
+        if (service.discount > 0) {
+            sb.appendLine("Diskon: -${rupiah.format(service.discount)}")
+        }
+        sb.appendLine("--------------------------------")
+        sb.appendLine("*TOTAL DIBAYAR: ${rupiah.format(service.totalAmount)}*")
+        sb.appendLine("--------------------------------")
+        sb.appendLine("Terima kasih telah mempercayakan perawatan motor Anda di $workshopName.")
+        if (phoneBengkel.isNotBlank()) sb.appendLine("Kontak Bengkel: $phoneBengkel")
+
+        val message = sb.toString()
+        val formattedPhone = formatPhoneNumber(service.phoneNumber)
+
+        // Proteksi Simulasi: jika data simulasi, jangan luncurkan WhatsApp asli
+        if (service.customerName.contains("[SIMULASI]") || formattedPhone.startsWith("628120000")) {
+            Toast.makeText(context, "Mode Simulasi: Struk Lunas telah disimulasikan terkirim ke pelanggan.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW)
+            val uri = if (formattedPhone.isNotEmpty()) {
+                Uri.parse("https://api.whatsapp.com/send?phone=$formattedPhone&text=${Uri.encode(message)}")
+            } else {
+                Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(message)}")
+            }
+            intent.data = uri
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, message)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Kirim Bukti Pembayaran Lunas"))
+        }
+    }
+
+    /**
+     * Muat 10 Data Uji Simulasi untuk WA Blast
+     */
+    fun loadSimulationData(context: Context) {
+        viewModelScope.launch {
+            repository.loadSimulationData()
+            Toast.makeText(context, "10 data pelanggan simulasi berhasil dimuat untuk uji coba WA Blast.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -484,6 +702,62 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
             )
             Toast.makeText(context, "Setoran senilai Rp $total berhasil disimpan!", Toast.LENGTH_LONG).show()
             _currentScreen.value = BengkelScreen.DASHBOARD
+        }
+    }
+
+    // --- Setoran & Approval Bos ---
+    fun submitSetoranKeBos(
+        type: String, // CASH atau TRANSFER_BANK
+        amount: Long,
+        notes: String,
+        context: Context
+    ) {
+        viewModelScope.launch {
+            repository.insertCashDeposit(
+                CashDeposit(
+                    depositType = type,
+                    totalAmount = amount,
+                    notes = notes,
+                    approvalStatus = ApprovalStatus.PENDING,
+                    dateEpoch = System.currentTimeMillis()
+                )
+            )
+            Toast.makeText(context, "Pengajuan Setoran $type senilai Rp $amount berhasil dikirim ke Bos!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun approveSetoranKeBos(depositId: Long, isApproved: Boolean, context: Context) {
+        viewModelScope.launch {
+            val status = if (isApproved) ApprovalStatus.DISETUJUI else ApprovalStatus.KOREKSI
+            val approvedBy = _activeUserRole.value
+            val timeEpoch = System.currentTimeMillis()
+            repository.updateCashDepositApproval(depositId, status, approvedBy, timeEpoch)
+            Toast.makeText(context, "Setoran telah di-${status.name} oleh Bos!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // --- Kas Kecil / Pengajuan / Rembes ---
+    fun submitPengajuanKasKecil(name: String, amount: Long, category: String, context: Context) {
+        viewModelScope.launch {
+            repository.insertExpenseItem(
+                ExpenseItem(
+                    name = name.uppercase(),
+                    amount = amount,
+                    category = category,
+                    status = ApprovalStatus.PENDING,
+                    dateEpoch = System.currentTimeMillis()
+                )
+            )
+            Toast.makeText(context, "Pengajuan $category ($name) Rp $amount berhasil diajukan!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun approveKasKecilRembes(id: Long, isApproved: Boolean, context: Context) {
+        viewModelScope.launch {
+            val status = if (isApproved) ApprovalStatus.DISETUJUI else ApprovalStatus.KOREKSI
+            val timeEpoch = System.currentTimeMillis()
+            repository.updateExpenseItemApproval(id, status, timeEpoch)
+            Toast.makeText(context, "Pengajuan dana $status oleh Bos", Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,9 +34,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.Warning
@@ -56,7 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -524,31 +535,37 @@ fun ProTrialPackagesDialog(
                     }
                 }
 
-                // Tombol Pesan Serial Number WhatsApp ke Developer
+                // Tombol Ajukan Serial Number Email ke Developer (Sesuai Permintaan: Email Only, Hidden Nomor Developer)
                 Button(
                     onClick = {
                         try {
-                            val msg = "Halo Developer BengkelQu, saya ingin aktivasi paket PRO:\n" +
-                                    "- Paket: ${selectedPlan.title} (${selectedPlan.priceText})\n" +
+                            val subject = "Aktivasi Lisensi BengkelQu PRO - $workshopName"
+                            val body = "Yth. Developer BengkelQu (${FeatureGate.DEVELOPER_EMAIL}),\n\n" +
+                                    "Saya bermaksud mengajukan aktivasi paket PRO untuk bengkel saya:\n" +
+                                    "- Paket Dipilih: ${selectedPlan.title} (${selectedPlan.priceText} / ${selectedPlan.durationLabel})\n" +
                                     "- Nama Bengkel: $workshopName\n" +
-                                    "- ID Perangkat: $deviceId\n" +
-                                    "Mohon dikirimkan Serial Number resmi. Terima kasih!"
-                            val encodedMsg = Uri.encode(msg)
-                            val url = "https://wa.me/${FeatureGate.SUPPORT_WHATSAPP_NUMBER}?text=$encodedMsg"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            context.startActivity(intent)
+                                    "- ID Perangkat (Device ID): $deviceId\n\n" +
+                                    "Mohon dikirimkan Serial Number aktivasi resmi untuk ID Perangkat tersebut.\n\n" +
+                                    "Terima kasih."
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:${FeatureGate.DEVELOPER_EMAIL}")
+                                putExtra(Intent.EXTRA_SUBJECT, subject)
+                                putExtra(Intent.EXTRA_TEXT, body)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Kirim Pengajuan Aktivasi via Email"))
                         } catch (e: Exception) {
-                            Toast.makeText(context, "Tidak dapat membuka WhatsApp", Toast.LENGTH_SHORT).show()
+                            clipboardManager.setText(AnnotatedString(FeatureGate.DEVELOPER_EMAIL))
+                            Toast.makeText(context, "Email Developer disalin: ${FeatureGate.DEVELOPER_EMAIL}", Toast.LENGTH_LONG).show()
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth().height(44.dp)
                 ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "ORDER SN VIA WHATSAPP DEVELOPER",
+                        text = "AJUKAN SERIAL NUMBER VIA EMAIL",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -647,3 +664,251 @@ fun ProFeatureComparisonDialog(
         onActivateKey = onActivateKey
     )
 }
+
+/**
+ * Tanda Kunci Bersinar (Glowing Lock Badge)
+ * Efek visual dinamis dengan animasi pulsing halo & kilau emas untuk menu PRO (Pengaturan, Omset, Laporan, Marketing)
+ */
+@Composable
+fun GlowingLockBadge(
+    modifier: Modifier = Modifier,
+    label: String = "PRO"
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "glowing_lock_transition")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow_alpha"
+    )
+    val glowScale by infiniteTransition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow_scale"
+    )
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = glowScale
+                scaleY = glowScale
+            }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFFFFD54F).copy(alpha = glowAlpha),
+                        Color(0xFFFF8F00).copy(alpha = 0.92f)
+                    )
+                )
+            )
+            .border(
+                width = 1.2.dp,
+                color = Color(0xFFFFF9C4).copy(alpha = glowAlpha),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Terkunci PRO",
+                tint = Color(0xFF3E2723),
+                modifier = Modifier.size(11.dp)
+            )
+            Text(
+                text = label,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                color = Color(0xFF3E2723)
+            )
+        }
+    }
+}
+
+/**
+ * Dialog Informasi Skema Teknis Generator Serial Number (Khusus Developer).
+ * Menjelaskan formula derivasi kunci aman berbasis Device ID dan menyediakan live tester simulator.
+ */
+@Composable
+fun DeveloperSchemaDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val deviceId = remember { FeatureGate.getDeviceId(context) }
+    var selectedPlanCode by remember { mutableStateOf("30D") }
+    var generatedSerial by remember {
+        mutableStateOf(FeatureGate.generateSerialNumber(deviceId, "30D"))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFFE8EAF6), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.DeveloperMode,
+                        contentDescription = null,
+                        tint = Color(0xFF283593),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "SKEMA SERIAL NUMBER",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                        color = Color(0xFF1A237E)
+                    )
+                    Text(
+                        text = "Teknis & Keamanan Offline Developer",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE7F6)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "🔐 Formula Kriptografi (Offline Binding):",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = Color(0xFF4A148C)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Raw = Clean(DeviceID) + '#' + PlanCode + '#' + SecretSalt\n" +
+                                    "Checksum = SHA-256(Raw).take(6 hex chars)\n" +
+                                    "Format = BQPRO-[PAKET]-[DEVICE_ID]-[CHECKSUM]",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color(0xFF311B92)
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Alur Permintaan Resmi:",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+                Text(
+                    text = "• Seluruh permintaan SN HANYA via Email Developer (${FeatureGate.DEVELOPER_EMAIL}). Nomor WA disembunyikan/ditiadakan.\n" +
+                            "• User mengirimkan Device ID mereka via tombol ajukan email.\n" +
+                            "• Developer meng-generate SN dan membalas email pelanggan.",
+                    fontSize = 11.sp,
+                    color = Color.DarkGray
+                )
+
+                // Live Simulator Generator
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "LIVE GENERATOR TESTER (DEVELOPER):",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            color = Color(0xFF00695C)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Device ID Target: $deviceId", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf("1D", "30D", "90D", "180D", "365D", "LIFE").forEach { code ->
+                                val isSel = selectedPlanCode == code
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSel) Color(0xFF00695C) else Color(0xFFE0E0E0))
+                                        .clickable {
+                                            selectedPlanCode = code
+                                            generatedSerial = FeatureGate.generateSerialNumber(deviceId, code)
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = code,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSel) Color.White else Color.Black
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Generated SN:",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                        Text(
+                            text = generatedSerial,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            color = Color(0xFFBF360C)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(generatedSerial))
+                                Toast.makeText(context, "Serial Number berhasil disalin: $generatedSerial", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SALIN SERIAL NUMBER", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("TUTUP")
+            }
+        }
+    )
+}
+

@@ -502,6 +502,6 @@ object BackupRestoreManager {
         dao.clearStaffMembers()
         dao.clearWorkshopProfile()
 
-        BengkelDatabase.populateInitialData(dao)
+        BengkelDatabase.populateCleanUserBase(dao)
     }
 }

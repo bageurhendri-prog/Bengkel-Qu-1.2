@@ -20,6 +20,7 @@ import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
 import com.example.ui.screens.AbsenScreen
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.KasirScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MarketingScreen
 import com.example.ui.screens.OmsetScreen
@@ -79,6 +80,7 @@ fun BengkelAppContent(
             BengkelScreen.LOGIN -> LoginScreen(viewModel = viewModel)
             BengkelScreen.DASHBOARD -> DashboardScreen(viewModel = viewModel)
             BengkelScreen.SERVICE_QUEUE -> ServiceKasirScreen(viewModel = viewModel)
+            BengkelScreen.KASIR -> KasirScreen(viewModel = viewModel)
             BengkelScreen.SERVICE_DETAIL -> ServiceDetailScreen(viewModel = viewModel)
             BengkelScreen.SETORAN -> SetoranScreen(viewModel = viewModel)
             BengkelScreen.PENGELUARAN -> PengeluaranScreen(viewModel = viewModel)

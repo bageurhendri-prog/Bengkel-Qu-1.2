@@ -38,6 +38,13 @@ enum class SubscriptionTier {
     PRO
 }
 
+object PaymentMethod {
+    const val CASH = "CASH"
+    const val TRANSFER_BANK = "TRANSFER_BANK"
+    const val QRIS = "QRIS"
+    const val OJOL = "OJOL"
+}
+
 data class ServiceItemDetail(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -154,9 +161,11 @@ data class RejectItem(
 @Entity(tableName = "expense_items")
 data class ExpenseItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String, // e.g. AIR GALON, BENSIN
+    val name: String, // e.g. AIR GALON, BENSIN, REMBES
     val amount: Long,
+    val category: String = "KAS_KECIL", // KAS_KECIL, REMBES, KAS_BESAR, OPERASIONAL
     val status: ApprovalStatus = ApprovalStatus.PENDING,
+    val approvedAtEpoch: Long = 0L,
     val dateEpoch: Long = System.currentTimeMillis()
 )
 
@@ -173,6 +182,7 @@ data class AttendanceRecord(
 @Entity(tableName = "cash_deposits")
 data class CashDeposit(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val depositType: String = "CASH", // CASH atau TRANSFER_BANK
     val count100k: Int = 0,
     val count50k: Int = 0,
     val count20k: Int = 0,
@@ -182,17 +192,21 @@ data class CashDeposit(
     val count1k: Int = 0,
     val count500: Int = 0,
     val totalAmount: Long = 0L,
+    val notes: String = "",
+    val approvalStatus: ApprovalStatus = ApprovalStatus.PENDING,
+    val approvedBy: String = "",
+    val approvedAtEpoch: Long = 0L,
     val dateEpoch: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "workshop_profile")
 data class WorkshopProfile(
     @PrimaryKey val id: Int = 1,
-    val workshopName: String = "BENGKEL QU",
-    val ownerName: String = "Hendri",
-    val email: String = "bageurhendri@gmail.com",
-    val phone: String = "085714216556",
-    val address: String = "Jl. Otomotif No. 88, Bandung",
+    val workshopName: String = "Bengkel Saya",
+    val ownerName: String = "",
+    val email: String = "",
+    val phone: String = "",
+    val address: String = "",
     val subscriptionTier: SubscriptionTier = SubscriptionTier.REGULAR,
     val licenseKey: String = "",
     val validUntilEpoch: Long = 0L // 0 = seumur hidup (lifetime)

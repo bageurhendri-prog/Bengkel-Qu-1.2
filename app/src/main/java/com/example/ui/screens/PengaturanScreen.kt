@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
@@ -38,7 +39,6 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stars
@@ -80,10 +80,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
-import com.example.ui.components.ProFeatureBadge
-import com.example.ui.components.ProFeatureComparisonDialog
+import com.example.ui.components.DeveloperSchemaDialog
+import com.example.ui.components.GlowingLockBadge
 import com.example.ui.components.ProTrialPackagesDialog
-import com.example.ui.components.ProUpgradeDialog
 import com.example.ui.theme.AppColorTheme
 import com.example.util.FeatureGate
 import kotlinx.coroutines.launch
@@ -99,22 +98,17 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
 
     val profile by viewModel.workshopProfile.collectAsStateWithLifecycle()
     val isPro by viewModel.isProUser.collectAsStateWithLifecycle()
+    val trialStatus by viewModel.trialStatus.collectAsStateWithLifecycle()
     val staffList by viewModel.staffMembers.collectAsStateWithLifecycle()
     val activeTheme by viewModel.activeTheme.collectAsStateWithLifecycle()
     val fontSizeScale by viewModel.fontSizeScale.collectAsStateWithLifecycle()
     val allStocks by viewModel.allStockItems.collectAsStateWithLifecycle()
     val completedServices by viewModel.completedServices.collectAsStateWithLifecycle()
 
-    val trialStatus = remember(profile) {
-        FeatureGate.getTrialStatus(context, profile)
-    }
-
+    var showProPackagesDialog by remember { mutableStateOf(false) }
+    var showDevSchemaDialog by remember { mutableStateOf(false) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
-
-    // Pro Licensing States
-    var showProComparisonDialog by remember { mutableStateOf(false) }
-    var showProActivationDialog by remember { mutableStateOf(false) }
 
     // Backup & Restore & Reset States
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -190,7 +184,7 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header Ringkas Status Lisensi
+            // Header Ringkas
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -202,11 +196,143 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                ProFeatureBadge(
-                    isPro = isPro,
-                    trialStatus = trialStatus,
-                    onClick = { showProActivationDialog = true }
-                )
+            }
+
+            // SECTION: STATUS LISENSI & FITUR PRO
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (hasProAccess) MaterialTheme.colorScheme.surface else Color(0xFFFFFDE7)
+                ),
+                border = if (!hasProAccess) BorderStroke(1.2.dp, Color(0xFFFFB300)) else BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.WorkspacePremium,
+                                contentDescription = null,
+                                tint = if (hasProAccess) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "STATUS LISENSI BENGKELQU PRO",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = if (hasProAccess) Color(0xFF1B5E20) else Color(0xFFE65100)
+                            )
+                        }
+
+                        if (!hasProAccess) {
+                            GlowingLockBadge(label = "TERKUNCI")
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFE8F5E9))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = if (profile?.subscriptionTier == com.example.data.local.SubscriptionTier.PRO) "PRO RESMI" else "TRIAL 10 HARI",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = when (val currentStatus = trialStatus) {
+                            is FeatureGate.TrialStatus.ProActivated -> {
+                                if (currentStatus.isLifetime) "Lisensi PRO Resmi Aktif Permanen (Lifetime). Seluruh fitur lengkap tanpa batasan."
+                                else "Lisensi PRO Resmi Aktif (Sisa ${currentStatus.daysRemaining} hari). Seluruh fitur lengkap terbuka."
+                            }
+                            is FeatureGate.TrialStatus.TrialActive -> {
+                                "Masa Percobaan (Trial) 10 Hari Otomatis Aktif (Sisa ${currentStatus.daysRemaining} hari). Semua fitur PRO terbuka gratis!"
+                            }
+                            is FeatureGate.TrialStatus.Expired -> {
+                                "Masa trial 10 hari telah selesai. Fitur dasar (Kasir, Antrian, Stok, Absen) tetap bisa digunakan bebas tanpa batasan. Aktifkan PRO untuk membuka kembali Omset, Laporan, Marketing & Pengaturan Lanjut."
+                            }
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // ID Perangkat Box
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.04f))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("DEVICE ID PERANGKAT:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            Text(
+                                text = FeatureGate.getDeviceId(context),
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                val devId = FeatureGate.getDeviceId(context)
+                                clipboardManager.setText(AnnotatedString(devId))
+                                Toast.makeText(context, "ID Perangkat disalin: $devId", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Salin ID", modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showProPackagesDialog = true },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (hasProAccess) Color(0xFF2E7D32) else Color(0xFFE65100)
+                            )
+                        ) {
+                            Icon(Icons.Default.WorkspacePremium, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (hasProAccess) "PAKET / AKTIVASI" else "AKTIFKAN PRO", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showDevSchemaDialog = true },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SKEMA DEVELOPER", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
 
             // SECTION: PROFIL BENGKEL (matching diagram: "PROFIL")
@@ -239,11 +365,11 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Nama Bengkel: ${profile?.workshopName ?: "BENGKEL QU"}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "Pemilik: ${profile?.ownerName ?: "Hendri"}", fontSize = 13.sp)
-                    Text(text = "No. Telepon: ${profile?.phone ?: "085714216556"}", fontSize = 13.sp)
-                    Text(text = "Email: ${profile?.email ?: "bageurhendri@gmail.com"}", fontSize = 13.sp)
-                    Text(text = "Alamat: ${profile?.address ?: "Jl. Otomotif No. 88, Bandung"}", fontSize = 12.sp, color = Color.Gray)
+                    Text(text = "Nama Bengkel: ${profile?.workshopName?.ifBlank { "Bengkel Saya" } ?: "Bengkel Saya"}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "Pemilik: ${profile?.ownerName?.ifBlank { "-" } ?: "-"}", fontSize = 13.sp)
+                    Text(text = "No. Telepon: ${profile?.phone?.ifBlank { "-" } ?: "-"}", fontSize = 13.sp)
+                    Text(text = "Email: ${profile?.email?.ifBlank { "-" } ?: "-"}", fontSize = 13.sp)
+                    Text(text = "Alamat: ${profile?.address?.ifBlank { "-" } ?: "-"}", fontSize = 12.sp, color = Color.Gray)
                 }
             }
 
@@ -272,13 +398,7 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
                         }
 
                         IconButton(onClick = {
-                            val gate = FeatureGate.canAddStaff(staffList.size, isPro)
-                            if (gate is FeatureGate.GateResult.Denied) {
-                                Toast.makeText(context, gate.reason, Toast.LENGTH_LONG).show()
-                                showProComparisonDialog = true
-                            } else {
-                                showAddStaffDialog = true
-                            }
+                            showAddStaffDialog = true
                         }) {
                             Icon(Icons.Default.Add, contentDescription = "Tambah Staff", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -512,13 +632,35 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
         }
     }
 
+    // Modal: Pro Trial Packages Dialog
+    if (showProPackagesDialog) {
+        ProTrialPackagesDialog(
+            trialStatus = trialStatus,
+            workshopName = profile?.workshopName ?: "BENGKELQU",
+            onDismiss = { showProPackagesDialog = false },
+            onActivateKey = { key ->
+                viewModel.activateProLicense(key = key, context = context) { success, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+                showProPackagesDialog = false
+            }
+        )
+    }
+
+    // Modal: Developer Schema & Technical Dialog
+    if (showDevSchemaDialog) {
+        DeveloperSchemaDialog(
+            onDismiss = { showDevSchemaDialog = false }
+        )
+    }
+
     // Modal: Ubah Profil
     if (showEditProfileDialog) {
-        var bengkelName by remember { mutableStateOf(profile?.workshopName ?: "BENGKEL QU") }
-        var ownerName by remember { mutableStateOf(profile?.ownerName ?: "Hendri") }
-        var phone by remember { mutableStateOf(profile?.phone ?: "085714216556") }
-        var email by remember { mutableStateOf(profile?.email ?: "bageurhendri@gmail.com") }
-        var address by remember { mutableStateOf(profile?.address ?: "Jl. Otomotif No. 88, Bandung") }
+        var bengkelName by remember { mutableStateOf(profile?.workshopName ?: "Bengkel Saya") }
+        var ownerName by remember { mutableStateOf(profile?.ownerName ?: "") }
+        var phone by remember { mutableStateOf(profile?.phone ?: "") }
+        var email by remember { mutableStateOf(profile?.email ?: "") }
+        var address by remember { mutableStateOf(profile?.address ?: "") }
 
         AlertDialog(
             onDismissRequest = { showEditProfileDialog = false },
@@ -1053,25 +1195,7 @@ fun PengaturanScreen(viewModel: BengkelViewModel) {
         )
     }
 
-    // PRO Licensing Dialogs
-    if (showProActivationDialog || showProComparisonDialog) {
-        ProTrialPackagesDialog(
-            trialStatus = trialStatus,
-            workshopName = profile?.workshopName ?: "BENGKEL QU",
-            onDismiss = {
-                showProActivationDialog = false
-                showProComparisonDialog = false
-            },
-            onActivateKey = { key: String ->
-                viewModel.activateProLicense(key, context) { success: Boolean, _ ->
-                    if (success) {
-                        showProActivationDialog = false
-                        showProComparisonDialog = false
-                    }
-                }
-            }
-        )
-    }
+
 }
 
 @Composable
