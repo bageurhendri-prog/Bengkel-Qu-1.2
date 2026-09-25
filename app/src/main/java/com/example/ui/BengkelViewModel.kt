@@ -67,6 +67,8 @@ class BengkelViewModel(application: Application) : AndroidViewModel(application)
     init {
         val database = BengkelDatabase.getDatabase(application, viewModelScope)
         repository = BengkelRepository(database.bengkelDao())
+        // Trial 10 hari otomatis aktif sejak aplikasi diinstall/pertama dibuka
+        FeatureGate.getTrialStartEpoch(application)
     }
 
     // Navigation & UI Configuration State

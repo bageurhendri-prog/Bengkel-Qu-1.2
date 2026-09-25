@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -164,6 +165,8 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                 DashboardHeader(
                     bengkelName = bengkelName,
                     role = role,
+                    trialStatus = trialStatus,
+                    onTrialClick = { showProDialog = true },
                     onSyncClick = { viewModel.syncMasterData(context) },
                     onLogoutClick = { viewModel.logout() }
                 )
@@ -230,10 +233,11 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                             onManageStock = { viewModel.navigateTo(BengkelScreen.STOK) }
                         )
 
-                        // Menu Grid 4 columns on wide screens
+                        // Menu Grid 3 columns on wide screens
                         ResponsiveMenuGrid(
-                            columns = 4,
+                            columns = 3,
                             isPro = isProUser,
+                            trialStatus = trialStatus,
                             onNavigate = { viewModel.navigateTo(it) },
                             onOpenProDialog = { showProDialog = true }
                         )
@@ -278,6 +282,7 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
                         ResponsiveMenuGrid(
                             columns = 2,
                             isPro = isProUser,
+                            trialStatus = trialStatus,
                             onNavigate = { viewModel.navigateTo(it) },
                             onOpenProDialog = { showProDialog = true }
                         )
@@ -359,6 +364,8 @@ fun DashboardScreen(viewModel: BengkelViewModel) {
 private fun DashboardHeader(
     bengkelName: String,
     role: String,
+    trialStatus: FeatureGate.TrialStatus,
+    onTrialClick: () -> Unit,
     onSyncClick: () -> Unit,
     onLogoutClick: () -> Unit
 ) {
@@ -417,6 +424,38 @@ private fun DashboardHeader(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Tombol Menu Trial 10 Hari (Logo Kecil & Status)
+                Surface(
+                    onClick = onTrialClick,
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFFFFD54F),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.testTag("trial_menu_header_badge")
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WorkspacePremium,
+                            contentDescription = "Menu Trial 10 Hari",
+                            tint = Color(0xFF3E2723),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = when (trialStatus) {
+                                is FeatureGate.TrialStatus.TrialActive -> "Trial: Sisa ${trialStatus.daysRemaining}H"
+                                is FeatureGate.TrialStatus.ProActivated -> if (trialStatus.isLifetime) "PRO Lifetime" else "PRO: ${trialStatus.daysRemaining}H"
+                                is FeatureGate.TrialStatus.Expired -> "Trial Habis"
+                            },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF3E2723)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSyncClick,
                     modifier = Modifier
@@ -1109,6 +1148,7 @@ private fun InventoryAlertCard(
 private fun ResponsiveMenuGrid(
     columns: Int,
     isPro: Boolean,
+    trialStatus: FeatureGate.TrialStatus,
     onNavigate: (BengkelScreen) -> Unit,
     onOpenProDialog: () -> Unit
 ) {
@@ -1142,6 +1182,17 @@ private fun ResponsiveMenuGrid(
                 subtitle = "Katalog & Fisik",
                 icon = Icons.Default.Inventory,
                 destination = BengkelScreen.STOK
+            ),
+            MenuItemData(
+                title = "Trial 10 Hari",
+                subtitle = when (trialStatus) {
+                    is FeatureGate.TrialStatus.TrialActive -> "Sisa ${trialStatus.daysRemaining} Hari (Aktif)"
+                    is FeatureGate.TrialStatus.ProActivated -> if (trialStatus.isLifetime) "Lisensi PRO Lifetime" else "PRO Resmi Aktif"
+                    is FeatureGate.TrialStatus.Expired -> "Trial Berakhir • Upgrade"
+                },
+                icon = Icons.Default.WorkspacePremium,
+                destination = BengkelScreen.DASHBOARD,
+                isTrialAction = true
             ),
             MenuItemData(
                 title = "Marketing WA",
@@ -1190,13 +1241,17 @@ private fun ResponsiveMenuGrid(
                             BengkelScreen.REPORT,
                             BengkelScreen.MARKETING
                         )
-                        val showGlowingLock = !isPro && isProMenu
+                        // Tanda Gembok Bersinar untuk menandai fitur-fitur berstatus PRO
+                        val isOfficialPro = trialStatus is FeatureGate.TrialStatus.ProActivated
+                        val showGlowingLock = isProMenu && !isOfficialPro
 
                         MenuGridCard(
                             item = item,
                             showGlowingLock = showGlowingLock,
                             onClick = {
-                                if (!isPro && item.destination in listOf(
+                                if (item.isTrialAction) {
+                                    onOpenProDialog()
+                                } else if (!isPro && item.destination in listOf(
                                         BengkelScreen.OMSET,
                                         BengkelScreen.REPORT,
                                         BengkelScreen.MARKETING
@@ -1226,7 +1281,8 @@ private data class MenuItemData(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
-    val destination: BengkelScreen
+    val destination: BengkelScreen,
+    val isTrialAction: Boolean = false
 )
 
 @Composable
@@ -1236,15 +1292,22 @@ private fun MenuGridCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isTrial = item.isTrialAction
     Card(
         modifier = modifier
             .height(105.dp)
             .clickable { onClick() }
             .testTag("menu_${item.title.lowercase().replace(" ", "_")}"),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = if (showGlowingLock) BorderStroke(1.2.dp, Color(0xFFFFB300)) else BorderStroke(1.dp, Color(0xFFE8E8E8)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isTrial) Color(0xFFFFFDF5) else MaterialTheme.colorScheme.surface
+        ),
+        border = when {
+            isTrial -> BorderStroke(1.2.dp, Color(0xFFFFB300))
+            showGlowingLock -> BorderStroke(1.2.dp, Color(0xFFFFB300))
+            else -> BorderStroke(1.dp, Color(0xFFE8E8E8))
+        },
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isTrial) 2.5.dp else 1.5.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -1257,13 +1320,15 @@ private fun MenuGridCard(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .background(
+                            if (isTrial) Color(0xFFFFF8E1) else MaterialTheme.colorScheme.primaryContainer
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = item.icon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = if (isTrial) Color(0xFFF57F17) else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1273,14 +1338,14 @@ private fun MenuGridCard(
                         text = item.title,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (isTrial) Color(0xFFB78103) else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = item.subtitle,
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (isTrial) Color(0xFF8D6E63) else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1293,6 +1358,22 @@ private fun MenuGridCard(
                         .align(Alignment.TopEnd)
                         .padding(top = 8.dp, end = 8.dp)
                 )
+            } else if (isTrial) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFFFB300))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "10 HARI",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF3E2723)
+                    )
+                }
             }
         }
     }

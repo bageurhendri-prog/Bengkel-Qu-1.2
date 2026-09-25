@@ -26,9 +26,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ReportProblem
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -69,7 +67,6 @@ import com.example.data.local.StockItem
 import com.example.data.local.StockStatus
 import com.example.ui.BengkelScreen
 import com.example.ui.BengkelViewModel
-import com.example.ui.components.BarcodeScannerDialog
 import com.example.util.FeatureGate
 
 @Composable
@@ -80,31 +77,21 @@ fun StokScreen(viewModel: BengkelViewModel) {
     val incomingStocks by viewModel.incomingStocks.collectAsStateWithLifecycle()
     val rejectItems by viewModel.rejectItems.collectAsStateWithLifecycle()
 
-    var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
     var stockFilter by remember { mutableStateOf("Semua") }
 
     var showAddStockDialog by remember { mutableStateOf(false) }
     var showAddIncomingDialog by remember { mutableStateOf(false) }
     var showAddRejectDialog by remember { mutableStateOf(false) }
-    var showBarcodeScanner by remember { mutableStateOf(false) }
-    var barcodeForNewItem by remember { mutableStateOf("") }
 
 
     val filteredStocks = allStocks.filter { item ->
-        val matchesSearch = searchQuery.isBlank() ||
-                item.name.contains(searchQuery, ignoreCase = true) ||
-                item.brand.contains(searchQuery, ignoreCase = true) ||
-                item.barcode.contains(searchQuery, ignoreCase = true)
-
-        val matchesFilter = when (stockFilter) {
+        when (stockFilter) {
             "Jual Putus" -> item.status == StockStatus.JUAL_PUTUS
             "Konsinyasi" -> item.status == StockStatus.KONSINYASI
             "Stok Menipis (<=5)" -> item.qty <= 5
             else -> true
         }
-
-        matchesSearch && matchesFilter
     }
 
     Scaffold(
@@ -115,7 +102,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
                 actions = {
                     IconButton(
                         onClick = {
-                            barcodeForNewItem = ""
                             showAddStockDialog = true
                         },
                         modifier = Modifier.padding(end = 8.dp)
@@ -147,7 +133,7 @@ fun StokScreen(viewModel: BengkelViewModel) {
                         color = Color.Gray
                     )
                     Text(
-                        text = "${allStocks.size} Item Terdaftar",
+                        text = "${allStocks.size} Item Terdaftar (Reguler: Tanpa Batas)",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -469,7 +455,7 @@ fun StokScreen(viewModel: BengkelViewModel) {
         var name by remember { mutableStateOf("") }
         var brand by remember { mutableStateOf("") }
         var quality by remember { mutableStateOf("Original") }
-        var barcode by remember(barcodeForNewItem) { mutableStateOf(barcodeForNewItem) }
+        var barcode by remember { mutableStateOf("") }
         var isKonsinyasi by remember { mutableStateOf(false) }
         var modalPriceStr by remember { mutableStateOf("") }
         var sellPriceStr by remember { mutableStateOf("") }
@@ -505,33 +491,14 @@ fun StokScreen(viewModel: BengkelViewModel) {
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Barcode field + Scan Button
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = barcode,
-                            onValueChange = { barcode = it },
-                            label = { Text("KODE BARCODE (OPSIONAL)") },
-                            placeholder = { Text("Contoh: 8991234567") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(
-                            onClick = {
-                                showBarcodeScanner = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("SCAN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                    OutlinedTextField(
+                        value = barcode,
+                        onValueChange = { barcode = it },
+                        label = { Text("KODE BARANG / PART NO (OPSIONAL)") },
+                        placeholder = { Text("Contoh: 8991234567") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -614,7 +581,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
                                 barcode = barcode,
                                 context = context
                             )
-                            barcodeForNewItem = ""
                             showAddStockDialog = false
                         } else {
                             Toast.makeText(context, "Lengkapi data dengan benar", Toast.LENGTH_SHORT).show()
@@ -626,7 +592,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = {
-                    barcodeForNewItem = ""
                     showAddStockDialog = false
                 }) {
                     Text("BATAL")
@@ -739,29 +704,6 @@ fun StokScreen(viewModel: BengkelViewModel) {
             }
         )
     }
-
-    if (showBarcodeScanner) {
-        BarcodeScannerDialog(
-            title = if (showAddStockDialog) "SCAN BARCODE UNTUK ITEM BARU" else "CARI SPAREPART VIA BARCODE",
-            registeredStocks = allStocks,
-            onBarcodeScanned = { code, matchedStock ->
-                if (showAddStockDialog) {
-                    barcodeForNewItem = code
-                    Toast.makeText(context, "Barcode $code berhasil dipindai!", Toast.LENGTH_SHORT).show()
-                } else {
-                    searchQuery = code
-                    if (matchedStock != null) {
-                        Toast.makeText(context, "Ditemukan: ${matchedStock.name} (Stok: ${matchedStock.qty})", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Barcode $code belum ada di katalog stok", Toast.LENGTH_LONG).show()
-                    }
-                }
-            },
-            onDismiss = { showBarcodeScanner = false }
-        )
-    }
-
-
 }
 
 @Composable
@@ -792,22 +734,13 @@ fun StockItemCard(item: StockItem) {
                     )
                     if (item.barcode.isNotBlank()) {
                         Spacer(modifier = Modifier.height(3.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.QrCodeScanner,
-                                contentDescription = null,
-                                modifier = Modifier.size(13.dp),
-                                tint = Color(0xFF1976D2)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = item.barcode,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF1976D2),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        Text(
+                            text = "Kode: ${item.barcode}",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF1976D2),
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
 

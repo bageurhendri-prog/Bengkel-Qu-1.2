@@ -602,6 +602,24 @@ fun ProTrialPackagesDialog(
                             fontWeight = FontWeight.Medium
                         )
                     }
+
+                    // Quick-fill button for testing license activation in preview
+                    TextButton(
+                        onClick = {
+                            serialNumberInput = "BQPRO-ADMIN"
+                            errorMessage = ""
+                        },
+                        modifier = Modifier.align(Alignment.Start)
+                    ) {
+                        Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF1565C0))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Gunakan Kunci Tester Cepat: BQPRO-ADMIN",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1565C0)
+                        )
+                    }
                 }
             }
         },
@@ -699,19 +717,20 @@ fun GlowingLockBadge(
             .graphicsLayer {
                 scaleX = glowScale
                 scaleY = glowScale
+                alpha = glowAlpha
             }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                Brush.radialGradient(
+                Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFFFFD54F).copy(alpha = glowAlpha),
-                        Color(0xFFFF8F00).copy(alpha = 0.92f)
+                        Color(0xFFFFD54F),
+                        Color(0xFFFF8F00)
                     )
                 )
             )
             .border(
                 width = 1.2.dp,
-                color = Color(0xFFFFF9C4).copy(alpha = glowAlpha),
+                color = Color(0xFFFFF9C4),
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(horizontal = 6.dp, vertical = 2.dp),
